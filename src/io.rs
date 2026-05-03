@@ -1,6 +1,5 @@
 use bitfield_struct::bitfield;
 
-
 #[bitfield(u16, hash = true, order = msb)]
 #[derive(Eq, PartialEq)]
 struct IOBits {
@@ -15,4 +14,3 @@ struct IOBits {
     #[bits(1, default = false)]
     b: bool,
 }
-
