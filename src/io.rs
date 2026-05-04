@@ -2,15 +2,15 @@ use bitfield_struct::bitfield;
 
 #[bitfield(u16, hash = true, order = msb)]
 #[derive(Eq, PartialEq)]
-struct IOBits {
+pub struct IOBits {
     #[bits(12)]
     _padding: u16,
     #[bits(1, default = false)]
-    o: bool,
+    pub on: bool,
     #[bits(1, default = false)]
-    i: bool,
+    pub interupt: bool,
     #[bits(1, default = false)]
-    d: bool,
+    pub done: bool,
     #[bits(1, default = false)]
-    b: bool,
+    pub busy: bool,
 }

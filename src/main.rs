@@ -5,6 +5,7 @@ use crate::cli::initalize_machine;
 mod cli;
 mod io;
 mod machine;
+mod memory;
 mod microcode;
 mod registers;
 

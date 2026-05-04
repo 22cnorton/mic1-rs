@@ -1,4 +1,6 @@
 use crate::cli::Mic1Args;
+use crate::memory::traits::MutableMemory;
+use crate::memory::{IOMemory, traits::Memory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{self, RegisterSize};
 use anyhow::Result;
@@ -10,7 +12,8 @@ use thiserror::Error;
 
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Machine {
-    memory: Box<[u16; Self::MEMORY_SIZE]>,
+    // TODO: make generic for different memory types
+    memory: IOMemory<u16, { Self::MEMORY_SIZE }>,
     micro_code: Box<[MicroInstruction; Self::MICROCODE_LENGTH]>,
 
     registers: registers::Registers,
@@ -66,13 +69,13 @@ impl Subtick {
 impl Machine {
     pub const MEMORY_SIZE: usize = 4096;
     pub const MICROCODE_LENGTH: usize = 256;
-
-    pub fn current_instruction(&self) -> u16 {
+    #[allow(dead_code)]
+    pub fn current_instruction(&self) -> &u16 {
         self.memory
-            .get(self.registers.pc as usize)
-            .copied()
-            .unwrap_or_default()
+            .read(self.registers.pc as usize)
+            .expect("Never read out of bounds")
     }
+    #[allow(dead_code)]
     pub fn current_micro_instruction(&self) -> MicroInstruction {
         self.mir
     }
@@ -177,6 +180,7 @@ impl Machine {
         self.blocking_io = true;
 
         println!("{}", self.registers);
+        println!();
         println!("{:<15}: {}", "Total Cycles", self.clock.tick);
         println!();
 
@@ -216,6 +220,7 @@ impl Machine {
                     self.clock.subtick = Subtick::Load; // Reset subtick to Load for next instruction
                     break;
                 }
+                #[cfg(debug_assertions)]
                 "m" => {
                     println!("Micro Code");
                     self.micro_code.iter().enumerate().for_each(|(i, instr)| {
@@ -225,12 +230,7 @@ impl Machine {
                 _ => {
                     if let Ok(addr) = input.parse::<usize>() {
                         if addr < self.memory.len() {
-                            println!(
-                                "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
-                                addr,
-                                self.memory[addr],
-                                self.memory[addr].cast_signed()
-                            );
+                            self.display_memory(iter::once(addr));
                             println!("Type  {:>7}  to continue debugging", "<Enter>");
                             println!("Type  {:>7}  to quit", 'q');
                             println!("Type  {:>7} for forward range", 'f');
@@ -245,11 +245,11 @@ impl Machine {
                             match input {
                                 "q" => quit!(),
                                 "f" => match get_range!("forward") {
-                                    Some(end) => self.show_memory(addr + 1, addr + end),
+                                    Some(end) => self.display_memory(addr + 1..=addr + end),
                                     None => continue,
                                 },
                                 "b" => match get_range!("backward") {
-                                    Some(end) => self.show_memory(addr, addr - end),
+                                    Some(end) => self.display_memory((addr - end..addr).rev()),
                                     None => continue,
                                 },
                                 _ => continue,
@@ -267,27 +267,23 @@ impl Machine {
         Ok(())
     }
 
-    fn show_memory(&self, start: usize, end: usize) {
-        if end > start {
-            for addr in start..end {
-                let reg = self.memory[addr];
-                println!(
-                    "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
-                    addr,
-                    reg,
-                    reg.cast_signed()
-                );
-            }
-        } else {
-            for addr in (end..start).rev() {
-                let reg = self.memory[addr];
-                println!(
-                    "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
-                    addr,
-                    reg,
-                    reg.cast_signed()
-                );
-            }
+    fn display_memory<I>(&self, indicies: I)
+    //TODO: refactor into Display trait on Memory
+    where
+        I: Iterator<Item = usize>,
+    {
+        for addr in indicies {
+            let reg = self
+                .memory
+                .read(addr)
+                .map_or_else(|(value, err)| value.ok_or(err), Ok)
+                .expect("Not out of bounds");
+            println!(
+                "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
+                addr,
+                reg,
+                reg.cast_signed()
+            );
         }
     }
 
@@ -326,14 +322,13 @@ impl Machine {
                 self.halt()?;
             }
             (false, true) => {
-                self.memory[self.mar as usize] = self.mbr;
+                self.memory
+                    .write(self.mar as usize, self.mbr)
+                    .expect("Never out of bounds");
             }
             (true, false) => {
-                self.mbr = self
-                    .memory
-                    .get(self.mar as usize)
-                    .copied()
-                    .unwrap_or_default();
+                self.mbr = *MutableMemory::read(&mut self.memory, self.mar as usize)
+                    .expect("Never read out of bounds");
             }
             (false, false) => {}
         }
