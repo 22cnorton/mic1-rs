@@ -2,3 +2,5 @@
 *.dat
 *.asm
 *.bin
+*.mc
+benchmark.txt

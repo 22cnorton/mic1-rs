@@ -1,6 +1,6 @@
 use crate::cli::Mic1Args;
 use crate::memory::traits::MutableMemory;
-use crate::memory::{IOMemory, traits::Memory};
+use crate::memory::{IOMemory, traits::ReadableMemory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{self, RegisterSize};
 use anyhow::Result;
@@ -13,7 +13,7 @@ use thiserror::Error;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Machine {
     // TODO: make generic for different memory types
-    memory: IOMemory<u16, { Self::MEMORY_SIZE }>,
+    memory: IOMemory<u16>,
     micro_code: Box<[MicroInstruction; Self::MICROCODE_LENGTH]>,
 
     registers: registers::Registers,
@@ -25,7 +25,7 @@ pub struct Machine {
     b_bus: RegisterSize,
     c_bus: RegisterSize,
     mbr: RegisterSize,
-    mar: RegisterSize,
+    mar: RegisterSize, // Retype since this can only be twelve bits
 
     read_micro_instructions: u8, // TODO: make ctor that returns machine with these values instead of carrying it arround
     read_machine_instructions: u16,
@@ -71,8 +71,7 @@ impl Machine {
     pub const MICROCODE_LENGTH: usize = 256;
     #[allow(dead_code)]
     pub fn current_instruction(&self) -> &u16 {
-        self.memory
-            .read(self.registers.pc as usize)
+        ReadableMemory::read(&self.memory, self.registers.pc as usize)
             .expect("Never read out of bounds")
     }
     #[allow(dead_code)]
@@ -97,16 +96,14 @@ impl Machine {
     }
 
     fn calc(&mut self) {
-        let a_value = match self.mir.amux() {
-            false => self.a_bus,
-            true => {
-                // eprintln!("Self.mbr {}", self.mbr);
-                self.mbr
-            }
+        let a_value = if self.mir.amux() {
+            self.mbr
+        } else {
+            self.a_bus
         };
         if self.mir.mar() {
-            self.mar = self.b_bus & 0x0FFF;
-        }
+            self.mar = self.b_bus & 0xFFF
+        };
         let b_value = self.b_bus;
 
         let c_value = self.alu(a_value, b_value, self.mir.alu());
@@ -273,9 +270,7 @@ impl Machine {
         I: Iterator<Item = usize>,
     {
         for addr in indicies {
-            let reg = self
-                .memory
-                .read(addr)
+            let reg = ReadableMemory::read(&self.memory, addr)
                 .map_or_else(|(value, err)| value.ok_or(err), Ok)
                 .expect("Not out of bounds");
             println!(
@@ -309,28 +304,32 @@ impl Machine {
                     );
                     println!();
                 };
+
                 self.load()
             }
             Subtick::Gate => self.gate(),
             Subtick::Operation => self.calc(),
             Subtick::Store => self.store(),
         }
+        // (&mut self.memory).action();//TODO: figure out how
 
-        match (self.mir.rd(), self.mir.wr()) {
-            (true, true) => {
-                // eprintln!("Should be halting");
-                self.halt()?;
+        if self.clock.subtick == Subtick::Load {
+            match (self.mir.rd(), self.mir.wr()) {
+                (true, true) => {
+                    // eprintln!("Should be halting");
+                    self.halt()?;
+                }
+                (false, true) => {
+                    self.memory
+                        .write(self.mar as usize, self.mbr)
+                        .expect("Never out of bounds");
+                }
+                (true, false) => {
+                    self.mbr = *MutableMemory::read(&mut self.memory, self.mar as usize)
+                        .expect("Never read out of bounds");
+                }
+                (false, false) => {}
             }
-            (false, true) => {
-                self.memory
-                    .write(self.mar as usize, self.mbr)
-                    .expect("Never out of bounds");
-            }
-            (true, false) => {
-                self.mbr = *MutableMemory::read(&mut self.memory, self.mar as usize)
-                    .expect("Never read out of bounds");
-            }
-            (false, false) => {}
         }
 
         self.clock.pulse();
