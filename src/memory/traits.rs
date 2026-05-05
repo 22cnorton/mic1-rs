@@ -23,8 +23,8 @@ pub trait IOMappedMemory {
 }
 
 /// Trait for I/O bit types that can be used with IOMemory
-pub trait IOBitsType: Eq + From<Self::ValueType> + Into<Self::ValueType> + Default {
-    type ValueType;
+pub trait IOBitsType<T>: Eq + From<T> + Into<T> + Default {
+    // type ValueType;
 
     fn on(&self) -> bool;
     fn done(&self) -> bool;
@@ -64,22 +64,20 @@ pub trait IOBitsType: Eq + From<Self::ValueType> + Into<Self::ValueType> + Defau
 /// - Be converted to u8
 /// - Be debugged/printed to a stream
 /// - Optionally be converted from/to IOBits (for I/O operations)
-pub trait IOValue<I>: Copy + From<I> {
+pub trait IOValue<I: IOBitsType<T>, T>: Copy + From<I> + Into<I> {
     /// Convert this value to a u8
-    fn as_u8(self) -> u8;
+    fn as_byte(self) -> u8;
+    fn from_byte(value: u8) -> Self;
 }
 
 // Implement for u16 (the type used in the codebase)
-impl IOValue<MoloneyIOBits> for u16 {
-    fn as_u8(self) -> u8 {
+impl IOValue<MoloneyIOBits, u16> for u16 {
+    fn as_byte(self) -> u8 {
         self as u8
     }
-}
 
-// Implement IOValue for u16 with u16 as IOBits
-impl IOValue<u16> for u16 {
-    fn as_u8(self) -> u8 {
-        self as u8
+    fn from_byte(value: u8) -> Self {
+        value as Self
     }
 }
 

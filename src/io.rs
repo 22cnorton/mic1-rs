@@ -16,8 +16,8 @@ pub struct MoloneyIOBits {
     busy: bool,
 }
 
-impl IOBitsType for MoloneyIOBits {
-    type ValueType = u16;
+impl IOBitsType<u16> for MoloneyIOBits {
+    // type ValueType = u16;
 
     fn on(&self) -> bool {
         self.on()
