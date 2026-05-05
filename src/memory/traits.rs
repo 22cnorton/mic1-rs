@@ -1,4 +1,3 @@
-use crate::io::MoloneyIOBits;
 pub trait ReadableMemory {
     type MemoryType;
     type MemoryError<'a>
@@ -23,9 +22,10 @@ pub trait IOMappedMemory {
 }
 
 /// Trait for I/O bit types that can be used with IOMemory
-pub trait IOBitsType<T>: Eq + From<T> + Into<T> + Default {
-    // type ValueType;
-
+pub trait IOBitsType<T>
+where
+    Self: Eq + From<T> + Into<T> + Default,
+{
     fn on(&self) -> bool;
     fn done(&self) -> bool;
     #[allow(dead_code)]
@@ -64,14 +64,13 @@ pub trait IOBitsType<T>: Eq + From<T> + Into<T> + Default {
 /// - Be converted to u8
 /// - Be debugged/printed to a stream
 /// - Optionally be converted from/to IOBits (for I/O operations)
-pub trait IOValue<I: IOBitsType<T>, T>: Copy + From<I> + Into<I> {
-    /// Convert this value to a u8
+pub trait IOMemoryType: Copy {
     fn as_byte(self) -> u8;
     fn from_byte(value: u8) -> Self;
 }
 
 // Implement for u16 (the type used in the codebase)
-impl IOValue<MoloneyIOBits, u16> for u16 {
+impl IOMemoryType for u16 {
     fn as_byte(self) -> u8 {
         self as u8
     }

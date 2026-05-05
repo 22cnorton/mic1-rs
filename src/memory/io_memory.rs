@@ -1,9 +1,15 @@
-use crate::memory::traits::{IOBitsType, IOMappedMemory, IOValue, MutableMemory, ReadableMemory};
+use crate::memory::traits::{
+    IOBitsType, IOMappedMemory, IOMemoryType, MutableMemory, ReadableMemory,
+};
 use std::{collections::VecDeque, io::Write, iter, marker::PhantomData};
 use thiserror::Error;
 
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
-pub struct IOMemory<T, I: IOBitsType<T>> {
+pub struct IOMemory<T, I>
+where
+    T: IOMemoryType,
+    I: IOBitsType<T>,
+{
     memory: Box<[T]>,
     input_buf: VecDeque<Option<u8>>,
     _phantom: PhantomData<I>,
@@ -21,13 +27,17 @@ pub enum IOMemoryError {
     NoCharacters,
 }
 
-impl<T, I: IOBitsType<T>> IOMappedMemory for IOMemory<T, I> {
+impl<T, I> IOMappedMemory for IOMemory<T, I>
+where
+    T: IOMemoryType,
+    I: IOBitsType<T>,
+{
     const SIZE: usize = 0x1000;
 }
 
 impl<T, I> ReadableMemory for IOMemory<T, I>
 where
-    T: IOValue<I, T>,
+    T: IOMemoryType,
     I: IOBitsType<T>,
 {
     //Figure out how to get RO & RW memory to play nice so that there can RO machines
@@ -58,7 +68,7 @@ where
 }
 impl<T, I> MutableMemory for IOMemory<T, I>
 where
-    T: IOValue<I, T>,
+    T: IOMemoryType,
     I: IOBitsType<T>,
 {
     type MemoryType = T;
@@ -148,7 +158,11 @@ where
     }
 }
 
-impl<T, I: IOBitsType<T>> IOMemory<T, I> {
+impl<T, I> IOMemory<T, I>
+where
+    T: IOMemoryType,
+    I: IOBitsType<T>,
+{
     pub fn len(&self) -> usize {
         self.memory.len()
     }
@@ -168,13 +182,7 @@ impl<T, I: IOBitsType<T>> IOMemory<T, I> {
     fn set_transmitter(&mut self, value: T) {
         self.memory[Self::TRANSMITTER_ADDRESS] = value;
     }
-}
 
-impl<T, I> IOMemory<T, I>
-where
-    T: IOValue<I, T>,
-    I: IOBitsType<T>,
-{
     pub fn receiver_status(&self) -> I {
         self.memory[Self::RECEIVER_STATUS_ADDRESS].into()
     }
@@ -182,20 +190,19 @@ where
     pub fn transmitter_status(&self) -> I {
         self.memory[Self::TRANSMITTER_STATUS_ADDRESS].into()
     }
-}
 
-impl<T: IOValue<I, T>, I: IOBitsType<T>> IOMemory<T, I> {
     pub fn set_transmitter_status(&mut self, transmitter_status: I) {
         // eprintln!("{:?}", transmitter_status);
-        self.memory[Self::TRANSMITTER_STATUS_ADDRESS] = T::from(transmitter_status);
+        self.memory[Self::TRANSMITTER_STATUS_ADDRESS] = (transmitter_status).into();
     }
     pub fn set_receiver_status(&mut self, receiver_status: I) {
-        self.memory[Self::RECEIVER_STATUS_ADDRESS] = T::from(receiver_status);
+        self.memory[Self::RECEIVER_STATUS_ADDRESS] = (receiver_status).into();
     }
 }
-impl<T, I: IOBitsType<T>> Default for IOMemory<T, I>
+impl<T, I> Default for IOMemory<T, I>
 where
-    T: Default,
+    T: Default + IOMemoryType,
+    I: IOBitsType<T>,
 {
     fn default() -> Self {
         Self {
@@ -206,7 +213,11 @@ where
     }
 }
 
-impl<T, I: IOBitsType<T>> TryFrom<Vec<T>> for IOMemory<T, I> {
+impl<T, I> TryFrom<Vec<T>> for IOMemory<T, I>
+where
+    T: IOMemoryType,
+    I: IOBitsType<T>,
+{
     type Error = ();
 
     fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
