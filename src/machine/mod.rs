@@ -1,3 +1,3 @@
-pub mod machine;
+pub mod emulator;
 
-pub use machine::*;
+pub use emulator::*;

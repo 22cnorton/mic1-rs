@@ -1,4 +1,4 @@
-pub mod memory;
+pub mod io_memory;
 pub mod traits;
 
-pub use memory::*;
+pub use io_memory::*;
