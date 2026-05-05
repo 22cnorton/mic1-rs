@@ -1,6 +1,5 @@
-use anyhow::Context;
-
 use crate::cli::initalize_machine;
+use anyhow::Context;
 
 mod cli;
 mod io;
@@ -14,6 +13,6 @@ fn main() -> anyhow::Result<()> {
 
     // while let Ok(()) = machine.pulse() {}
     loop {
-        machine.pulse()?;
+        machine.pulse()?
     }
 }

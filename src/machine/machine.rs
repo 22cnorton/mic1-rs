@@ -1,4 +1,5 @@
 use crate::cli::Mic1Args;
+use crate::io::MoloneyIOBits;
 use crate::memory::traits::MutableMemory;
 use crate::memory::{IOMemory, traits::ReadableMemory};
 use crate::microcode::{self, MicroInstruction};
@@ -13,8 +14,8 @@ use thiserror::Error;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Machine {
     // TODO: make generic for different memory types
-    memory: IOMemory<u16>,
-    micro_code: Box<[MicroInstruction; Self::MICROCODE_LENGTH]>,
+    memory: IOMemory<u16, MoloneyIOBits>,
+    micro_code: Box<[MicroInstruction; Self::MICROCODE_LENGTH]>, // TODO: refactor to use ReadOnlyMemory Type
 
     registers: registers::Registers,
     blocking_io: bool,
@@ -29,7 +30,7 @@ pub struct Machine {
 
     read_micro_instructions: u8, // TODO: make ctor that returns machine with these values instead of carrying it arround
     read_machine_instructions: u16,
-} // TODO: implement IO
+}
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Default)]
 struct Clock {
@@ -225,7 +226,7 @@ impl Machine {
                     });
                 }
                 _ => {
-                    if let Ok(addr) = input.parse::<usize>() {
+                    if let Ok(addr) = input.parse() {
                         if addr < self.memory.len() {
                             self.display_memory(iter::once(addr));
                             println!("Type  {:>7}  to continue debugging", "<Enter>");
