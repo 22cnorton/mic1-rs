@@ -1,28 +1,28 @@
-pub trait ReadableMemory {
-    type MemoryType;
-    type MemoryError<'a>
-    where
-        Self: 'a;
-    fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError<'_>>;
-}
+use std::fmt::Debug;
 
-pub trait MutableMemory {
+pub trait ReadableMemory<const SIZE: usize> {
     type MemoryType;
     type MemoryError;
+    // const SIZE: usize;
+    fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError>;
+}
+
+pub trait MutableMemory<const SIZE: usize>: ReadableMemory<SIZE> {
+    //TODO: Split into readable and writeable traits
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError>;
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError>;
 }
 
-pub trait IOMappedMemory {
-    const SIZE: usize;
-    const RECEIVER_ADDRESS: usize = Self::SIZE - 4;
-    const RECEIVER_STATUS_ADDRESS: usize = Self::SIZE - 3;
-    const TRANSMITTER_ADDRESS: usize = Self::SIZE - 2;
-    const TRANSMITTER_STATUS_ADDRESS: usize = Self::SIZE - 1;
-}
+// pub trait IOMappedMemory<
+//     const SIZE: usize,
+
+// >: MutableMemory<SIZE>
+// {
+
+// }
 
 /// Trait for I/O bit types that can be used with IOMemory
-pub trait IOBitsType<T>
+pub trait IOBitsType<T: IOMemoryType>
 where
     Self: Eq + From<T> + Into<T> + Default,
 {
@@ -58,46 +58,15 @@ where
 
 // Implement for IOBits
 
-/// Trait for types that can be used as values in IOMemory.
-///
-/// Types implementing this trait can:
-/// - Be converted to u8
-/// - Be debugged/printed to a stream
-/// - Optionally be converted from/to IOBits (for I/O operations)
-pub trait IOMemoryType: Copy {
-    fn as_byte(self) -> u8;
-    fn from_byte(value: u8) -> Self;
-}
+pub trait IOMemoryType: Copy + Debug + Into<u8> + From<u8> + Default {}
 
 // Implement for u16 (the type used in the codebase)
-impl IOMemoryType for u16 {
-    fn as_byte(self) -> u8 {
-        self as u8
-    }
+// impl IOMemoryType for u16 {
+//     fn as_byte(self) -> u8 {
+//         self as u8
+//     }
 
-    fn from_byte(value: u8) -> Self {
-        value as Self
-    }
-}
-
-// Example: How to implement IOValue for a custom type
-/*
-impl IOValue for MyCustomType {
-    fn as_u8(self) -> u8 {
-        // Your custom conversion logic here
-        // For example, if MyCustomType has a value field:
-        self.value as u8
-    }
-
-    // If your custom type can convert to/from IOBits, implement these:
-    fn from_iobits(bits: IOBits) -> Self {
-        // Your conversion from IOBits
-        MyCustomType { value: bits.into() }
-    }
-
-    fn to_iobits(self) -> IOBits {
-        // Your conversion to IOBits
-        self.value.into()
-    }
-}
-*/
+//     fn from_byte(value: u8) -> Self {
+//         value as Self
+//     }
+// }

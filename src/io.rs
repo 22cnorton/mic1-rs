@@ -1,6 +1,6 @@
+use crate::machine::io_mem::IOMem;
 use crate::memory::traits::IOBitsType;
 use bitfield_struct::bitfield;
-
 #[bitfield(u16, hash = true, order = msb)]
 #[derive(Eq, PartialEq)]
 pub struct MoloneyIOBits {
@@ -16,7 +16,7 @@ pub struct MoloneyIOBits {
     busy: bool,
 }
 
-impl IOBitsType<u16> for MoloneyIOBits {
+impl IOBitsType<IOMem> for MoloneyIOBits {
     // type ValueType = u16;
 
     fn on(&self) -> bool {
