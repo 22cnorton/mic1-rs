@@ -14,7 +14,6 @@ use std::io::{self, BufRead};
 use std::iter;
 use thiserror::Error;
 
-
 pub mod io_mem {
     use crate::memory::traits::IOMemoryType;
 
@@ -97,8 +96,6 @@ pub struct Machine {
     read_micro_instructions: u8, // TODO: make ctor that returns machine with these values instead of carrying it arround
     read_machine_instructions: u16,
 }
-
-
 
 impl Machine {
     pub const MEMORY_SIZE: usize = 4096;
@@ -248,7 +245,7 @@ impl Machine {
                 "q" => quit!(),
                 "c" => {
                     self.blocking_io = false;
-                    self.clock.set_subtick (Subtick::Load); // Reset subtick to Load for next instruction
+                    self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
                     break;
                 }
                 #[cfg(debug_assertions)]
@@ -315,7 +312,7 @@ impl Machine {
     }
 
     pub fn pulse(&mut self) -> Result<()> {
-        match self.clock.subtick(){
+        match self.clock.subtick() {
             Subtick::Load => {
                 if self.clock.tick() == 0 {
                     println!(
