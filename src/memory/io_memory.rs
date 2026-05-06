@@ -35,30 +35,6 @@ pub enum IOMemoryError {
     NoCharacters,
 }
 
-// impl<
-//     T,
-//     I,
-//     const S: usize,
-//     const TRANSMITTER_STATUS_ADDRESS: usize,
-//     const TRANSMITTER_ADDRESS: usize,
-//     const RECEIVER_STATUS_ADDRESS: usize,
-//     const RECEIVER_ADDRESS: usize,
-// > IOMappedMemory<S>
-//     for IOMemory<
-//         T,
-//         I,
-//         S,
-//         TRANSMITTER_STATUS_ADDRESS,
-//         TRANSMITTER_ADDRESS,
-//         RECEIVER_STATUS_ADDRESS,
-//         RECEIVER_ADDRESS,
-//     >
-// where
-//     T: IOMemoryType,
-//     I: IOBitsType<T>,
-// {
-// } //TODO: make this have more generic params that can be specified by newtyping
-
 impl<
     T,
     I,

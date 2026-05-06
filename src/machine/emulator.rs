@@ -78,7 +78,6 @@ type ArchIOMem<const S: usize> = IOMemory<
 
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Machine {
-    // TODO: make generic for different memory types
     memory: ArchIOMem<{ Self::MEMORY_SIZE }>,
     micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
 
@@ -246,7 +245,7 @@ impl Machine {
                 "c" => {
                     self.blocking_io = false;
                     self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
-                    break;
+                    break Ok(());
                 }
                 #[cfg(debug_assertions)]
                 "m" => {
@@ -290,7 +289,6 @@ impl Machine {
                 }
             }
         }
-        Ok(())
     }
 
     fn display_memory<I>(&self, indicies: I)
@@ -340,7 +338,6 @@ impl Machine {
             Subtick::Operation => self.calc(),
             Subtick::Store => self.store(),
         }
-        // (&mut self.memory).action();//TODO: figure out how
 
         if self.clock.subtick() == Subtick::Load {
             match (self.mir.rd(), self.mir.wr()) {
