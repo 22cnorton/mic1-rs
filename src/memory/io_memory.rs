@@ -1,16 +1,24 @@
-use crate::memory::traits::{
-    IOBitsType, IOMappedMemory, IOMemoryType, MutableMemory, ReadableMemory,
+use crate::memory::{
+    mutable,
+    traits::{self, IOBitsType, IOMemoryType, MutableMemory, ReadableMemory},
 };
-use std::{collections::VecDeque, io::Write, iter, marker::PhantomData};
+use std::{collections::VecDeque, io::Write, marker::PhantomData};
 use thiserror::Error;
-
+// const SIZE: usize = 0x1000;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
-pub struct IOMemory<T, I>
-where
+pub struct IOMemory<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+> where
     T: IOMemoryType,
     I: IOBitsType<T>,
 {
-    memory: Box<[T]>,
+    memory: mutable::MutableMemory<T, S>,
     input_buf: VecDeque<Option<u8>>,
     _phantom: PhantomData<I>,
 }
@@ -27,76 +35,124 @@ pub enum IOMemoryError {
     NoCharacters,
 }
 
-impl<T, I> IOMappedMemory for IOMemory<T, I>
-where
-    T: IOMemoryType,
-    I: IOBitsType<T>,
-{
-    const SIZE: usize = 0x1000;
-}
+// impl<
+//     T,
+//     I,
+//     const S: usize,
+//     const TRANSMITTER_STATUS_ADDRESS: usize,
+//     const TRANSMITTER_ADDRESS: usize,
+//     const RECEIVER_STATUS_ADDRESS: usize,
+//     const RECEIVER_ADDRESS: usize,
+// > IOMappedMemory<S>
+//     for IOMemory<
+//         T,
+//         I,
+//         S,
+//         TRANSMITTER_STATUS_ADDRESS,
+//         TRANSMITTER_ADDRESS,
+//         RECEIVER_STATUS_ADDRESS,
+//         RECEIVER_ADDRESS,
+//     >
+// where
+//     T: IOMemoryType,
+//     I: IOBitsType<T>,
+// {
+// } //TODO: make this have more generic params that can be specified by newtyping
 
-impl<T, I> ReadableMemory for IOMemory<T, I>
+impl<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+> ReadableMemory<S>
+    for IOMemory<
+        T,
+        I,
+        S,
+        TRANSMITTER_STATUS_ADDRESS,
+        TRANSMITTER_ADDRESS,
+        RECEIVER_STATUS_ADDRESS,
+        RECEIVER_ADDRESS,
+    >
 where
     T: IOMemoryType,
     I: IOBitsType<T>,
 {
+    // const SIZE: usize = 0x1000;
     //Figure out how to get RO & RW memory to play nice so that there can RO machines
     type MemoryType = T;
-    type MemoryError<'a>
-        = (Option<&'a Self::MemoryType>, IOMemoryError)
-    where
-        T: 'a,
-        I: 'a;
-    fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError<'_>> {
+    type MemoryError = (Option<Self::MemoryType>, IOMemoryError);
+    fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         match index {
-            Self::RECEIVER_ADDRESS => {
+            i if i == RECEIVER_ADDRESS => {
                 if self.receiver_status().on() {
-                    Err((Some(self.receiver()), IOMemoryError::ImmutableMemory))
+                    Err((Some(*self.receiver()), IOMemoryError::ImmutableMemory))
                 } else {
                     Ok(self.receiver())
                 }
             }
-            Self::RECEIVER_STATUS_ADDRESS => Ok(&self.memory[index]),
-            Self::TRANSMITTER_ADDRESS => Ok(self.transmitter()),
-            Self::TRANSMITTER_STATUS_ADDRESS => Ok(&self.memory[index]),
+            i if i == TRANSMITTER_ADDRESS => Ok(self.transmitter()),
+            // Self::RECEIVER_STATUS_ADDRESS => Ok(&self.memory[index]),
+            // Self::TRANSMITTER_STATUS_ADDRESS => Ok(&self.memory[index]),
             _ => self
                 .memory
-                .get(index)
-                .ok_or((None, IOMemoryError::OutOfBounds(index))),
+                .read(index)
+                .or(Err((None, IOMemoryError::OutOfBounds(index)))),
         }
     }
 }
-impl<T, I> MutableMemory for IOMemory<T, I>
+impl<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+> traits::MutableMemory<S>
+    for IOMemory<
+        T,
+        I,
+        S,
+        TRANSMITTER_STATUS_ADDRESS,
+        TRANSMITTER_ADDRESS,
+        RECEIVER_STATUS_ADDRESS,
+        RECEIVER_ADDRESS,
+    >
 where
     T: IOMemoryType,
     I: IOBitsType<T>,
 {
-    type MemoryType = T;
-    type MemoryError = IOMemoryError;
+    // type MemoryType = T;
+    // type MemoryError = IOMemoryError;
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
         match index {
-            Self::RECEIVER_ADDRESS => self.set_receiver(value),
-            Self::RECEIVER_STATUS_ADDRESS => {
+            i if i == RECEIVER_STATUS_ADDRESS => {
                 let bit_value: I = I::from(value);
                 self.set_receiver_status(if bit_value.on() {
                     bit_value.with_busy(false).with_done(true)
                 } else {
                     I::default()
                 });
+                Ok(())
             }
-            Self::TRANSMITTER_ADDRESS => {
+            i if i == TRANSMITTER_ADDRESS => {
                 if self.transmitter_status().can_write() {
                     self.set_transmitter(value);
                     std::io::stdout()
-                        .write_all(&[(*self.transmitter()).as_byte()])
+                        .write_all(&[(*self.transmitter()).into()])
                         .unwrap();
                     // std::io::stdout().flush().unwrap();
                     self.set_transmitter_status(
                         self.transmitter_status().with_done(true).with_busy(false), // .with_interupt(true),
                     );
                 }
+                Ok(())
             }
-            Self::TRANSMITTER_STATUS_ADDRESS => {
+            i if i == TRANSMITTER_STATUS_ADDRESS => {
                 let bit_value = I::from(value);
 
                 self.set_transmitter_status(if bit_value.on() {
@@ -104,20 +160,18 @@ where
                 } else {
                     I::default()
                 });
+                Ok(())
             }
-            _ => {
-                *self
-                    .memory
-                    .get_mut(index)
-                    .ok_or(IOMemoryError::OutOfBounds(index))? = value;
-            }
+            _ => self
+                .memory
+                .write(index, value)
+                .or(Err((None, IOMemoryError::OutOfBounds(index)))),
         }
-        Ok(())
     }
 
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         match index {
-            Self::RECEIVER_ADDRESS => {
+            i if i == RECEIVER_ADDRESS => {
                 if self.receiver_status().can_read() {
                     if self.input_buf.is_empty() {
                         let mut buf = Default::default();
@@ -128,13 +182,13 @@ where
                             }
 
                             Err(_) | Ok(_) => {
-                                return Err(IOMemoryError::NoCharacters);
+                                return Err((None, IOMemoryError::NoCharacters));
                             }
                         }
                     }
                     // eprintln!("{:?}", self.input_buf);
                     if let Some(Some(byte)) = self.input_buf.pop_front() {
-                        self.set_receiver(T::from_byte(byte));
+                        self.set_receiver(T::from(byte));
                         self.set_receiver_status(
                             self.receiver_status().with_busy(false).with_done(true),
                         );
@@ -145,20 +199,32 @@ where
                 Ok(self.receiver())
             }
             // Self::RECEIVER_STATUS_ADDRESS => Ok(&self.memory[index]),
-            Self::TRANSMITTER_ADDRESS => Ok(self.transmitter()),
-            Self::TRANSMITTER_STATUS_ADDRESS | Self::RECEIVER_STATUS_ADDRESS => {
-                // eprintln!("{}",line!());
-                Ok(&self.memory[index])
-            }
             _ => self
                 .memory
-                .get(index)
-                .ok_or(IOMemoryError::OutOfBounds(index)),
+                .read(index)
+                .or(Err((None, IOMemoryError::OutOfBounds(index)))),
         }
     }
 }
 
-impl<T, I> IOMemory<T, I>
+impl<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+>
+    IOMemory<
+        T,
+        I,
+        S,
+        TRANSMITTER_STATUS_ADDRESS,
+        TRANSMITTER_ADDRESS,
+        RECEIVER_STATUS_ADDRESS,
+        RECEIVER_ADDRESS,
+    >
 where
     T: IOMemoryType,
     I: IOBitsType<T>,
@@ -168,66 +234,130 @@ where
     }
 
     fn receiver(&self) -> &T {
-        &self.memory[Self::RECEIVER_ADDRESS]
+        self.memory.read(RECEIVER_ADDRESS).unwrap()
     }
 
     fn set_receiver(&mut self, value: T) {
-        self.memory[Self::RECEIVER_ADDRESS] = value;
+        self.memory.write(RECEIVER_ADDRESS, value).unwrap();
     }
 
     fn transmitter(&self) -> &T {
-        &self.memory[Self::TRANSMITTER_ADDRESS]
+        self.memory.read(TRANSMITTER_ADDRESS).unwrap()
     }
 
     fn set_transmitter(&mut self, value: T) {
-        self.memory[Self::TRANSMITTER_ADDRESS] = value;
+        self.memory.write(TRANSMITTER_ADDRESS, value).unwrap();
     }
 
     pub fn receiver_status(&self) -> I {
-        self.memory[Self::RECEIVER_STATUS_ADDRESS].into()
+        I::from(*self.memory.read(RECEIVER_STATUS_ADDRESS).unwrap())
     }
 
     pub fn transmitter_status(&self) -> I {
-        self.memory[Self::TRANSMITTER_STATUS_ADDRESS].into()
+        I::from(*self.memory.read(TRANSMITTER_STATUS_ADDRESS).unwrap())
     }
 
     pub fn set_transmitter_status(&mut self, transmitter_status: I) {
-        // eprintln!("{:?}", transmitter_status);
-        self.memory[Self::TRANSMITTER_STATUS_ADDRESS] = (transmitter_status).into();
+        self.memory
+            .write(TRANSMITTER_STATUS_ADDRESS, transmitter_status.into())
+            .unwrap();
     }
     pub fn set_receiver_status(&mut self, receiver_status: I) {
-        self.memory[Self::RECEIVER_STATUS_ADDRESS] = (receiver_status).into();
+        self.memory
+            .write(RECEIVER_STATUS_ADDRESS, receiver_status.into())
+            .unwrap();
     }
 }
-impl<T, I> Default for IOMemory<T, I>
+impl<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+> Default
+    for IOMemory<
+        T,
+        I,
+        S,
+        TRANSMITTER_STATUS_ADDRESS,
+        TRANSMITTER_ADDRESS,
+        RECEIVER_STATUS_ADDRESS,
+        RECEIVER_ADDRESS,
+    >
 where
     T: Default + IOMemoryType,
     I: IOBitsType<T>,
 {
     fn default() -> Self {
         Self {
-            memory: Vec::from_iter(iter::repeat_with(Default::default).take(Self::SIZE)).into(),
+            memory: Default::default(),
             input_buf: Default::default(),
             _phantom: PhantomData,
         }
     }
 }
 
-impl<T, I> TryFrom<Vec<T>> for IOMemory<T, I>
+impl<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+> TryFrom<Vec<T>>
+    for IOMemory<
+        T,
+        I,
+        S,
+        TRANSMITTER_STATUS_ADDRESS,
+        TRANSMITTER_ADDRESS,
+        RECEIVER_STATUS_ADDRESS,
+        RECEIVER_ADDRESS,
+    >
 where
     T: IOMemoryType,
     I: IOBitsType<T>,
 {
-    type Error = ();
+    type Error = Vec<T>;
 
     fn try_from(value: Vec<T>) -> Result<Self, Self::Error> {
-        if value.len() != Self::SIZE {
-            return Err(());
-        }
         Ok(Self {
-            memory: value.into_boxed_slice(),
+            memory: value.try_into()?,
             input_buf: Default::default(),
             _phantom: PhantomData,
         })
+    }
+}
+impl<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+> From<[T; S]>
+    for IOMemory<
+        T,
+        I,
+        S,
+        TRANSMITTER_STATUS_ADDRESS,
+        TRANSMITTER_ADDRESS,
+        RECEIVER_STATUS_ADDRESS,
+        RECEIVER_ADDRESS,
+    >
+where
+    T: IOMemoryType,
+    I: IOBitsType<T>,
+{
+    fn from(value: [T; S]) -> Self {
+        Self {
+            memory: value.into(),
+            input_buf: Default::default(),
+            _phantom: PhantomData,
+        }
     }
 }

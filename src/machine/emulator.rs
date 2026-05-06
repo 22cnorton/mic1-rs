@@ -1,21 +1,87 @@
 use crate::cli::Mic1Args;
 use crate::io::MoloneyIOBits;
+use crate::machine::clock::{Clock, Subtick};
+use crate::memory::immutable::ImmutableMemory;
 use crate::memory::traits::MutableMemory;
 use crate::memory::{IOMemory, traits::ReadableMemory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{self, RegisterSize};
 use anyhow::Result;
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
 use std::io::{self, BufRead};
 use std::iter;
 use thiserror::Error;
 
+
+pub mod io_mem {
+    use crate::memory::traits::IOMemoryType;
+
+    use crate::io::MoloneyIOBits;
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default, Hash, PartialOrd, Ord)]
+    #[repr(transparent)]
+    pub struct IOMem(u16);
+
+    impl From<u16> for IOMem {
+        fn from(value: u16) -> Self {
+            Self(value)
+        }
+    }
+
+    impl From<IOMem> for u16 {
+        fn from(value: IOMem) -> Self {
+            value.0
+        }
+    }
+
+    impl From<u8> for IOMem {
+        fn from(value: u8) -> Self {
+            IOMem(value as u16)
+        }
+    }
+
+    impl From<IOMem> for u8 {
+        fn from(value: IOMem) -> Self {
+            value.0 as u8
+        }
+    }
+
+    impl From<MoloneyIOBits> for IOMem {
+        fn from(value: MoloneyIOBits) -> Self {
+            Self(value.into())
+        }
+    }
+
+    impl From<IOMem> for MoloneyIOBits {
+        fn from(value: IOMem) -> Self {
+            value.0.into()
+        }
+    }
+
+    impl IOMemoryType for IOMem {}
+}
+
+const ARCH_IO_MEM_SIZE: usize = 0x1000;
+type ArchIOMem<const S: usize> = IOMemory<
+    io_mem::IOMem,
+    MoloneyIOBits,
+    ARCH_IO_MEM_SIZE,
+    { ARCH_IO_MEM_SIZE - 1 },
+    { ARCH_IO_MEM_SIZE - 2 },
+    { ARCH_IO_MEM_SIZE - 3 },
+    { ARCH_IO_MEM_SIZE - 4 },
+>;
+// self.micro_code.iter().enumerate().for_each(|(i, instr)| { // TODO: figure out how to make the micro_code print this for debuging
+//                         println!("Addr: {:02X}  Instr: {:?}", i, instr);
+//                     });
+
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct Machine {
     // TODO: make generic for different memory types
-    memory: IOMemory<u16, MoloneyIOBits>,
-    micro_code: Box<[MicroInstruction; Self::MICROCODE_LENGTH]>, // TODO: refactor to use ReadOnlyMemory Type
+    memory: ArchIOMem<{ Self::MEMORY_SIZE }>,
+    micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
 
     registers: registers::Registers,
     blocking_io: bool,
@@ -32,46 +98,13 @@ pub struct Machine {
     read_machine_instructions: u16,
 }
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Default)]
-struct Clock {
-    tick: usize,
-    subtick: Subtick,
-}
 
-impl Clock {
-    fn pulse(&mut self) {
-        self.subtick = self.subtick.next_tick();
-        if self.subtick == Subtick::Load {
-            self.tick += 1;
-        }
-    }
-}
-
-#[derive(Eq, PartialEq, Debug, Default, Clone, Copy, Hash)]
-pub enum Subtick {
-    #[default]
-    Load,
-    Gate,
-    Operation,
-    Store,
-}
-
-impl Subtick {
-    pub const fn next_tick(&self) -> Self {
-        match self {
-            Subtick::Load => Self::Gate,
-            Subtick::Gate => Self::Operation,
-            Subtick::Operation => Self::Store,
-            Subtick::Store => Self::Load,
-        }
-    }
-}
 
 impl Machine {
     pub const MEMORY_SIZE: usize = 4096;
     pub const MICROCODE_LENGTH: usize = 256;
     #[allow(dead_code)]
-    pub fn current_instruction(&self) -> &u16 {
+    pub fn current_instruction(&self) -> &io_mem::IOMem {
         ReadableMemory::read(&self.memory, self.registers.pc as usize)
             .expect("Never read out of bounds")
     }
@@ -83,7 +116,7 @@ impl Machine {
     fn instruction_at(&self, addr: u8) -> MicroInstruction {
         *self
             .micro_code
-            .get(addr as usize)
+            .read(addr as usize)
             .unwrap_or(&Default::default())
     }
 
@@ -179,7 +212,7 @@ impl Machine {
 
         println!("{}", self.registers);
         println!();
-        println!("{:<15}: {}", "Total Cycles", self.clock.tick);
+        println!("{:<15}: {}", "Total Cycles", self.clock.tick());
         println!();
 
         macro_rules! quit {
@@ -215,15 +248,13 @@ impl Machine {
                 "q" => quit!(),
                 "c" => {
                     self.blocking_io = false;
-                    self.clock.subtick = Subtick::Load; // Reset subtick to Load for next instruction
+                    self.clock.set_subtick (Subtick::Load); // Reset subtick to Load for next instruction
                     break;
                 }
                 #[cfg(debug_assertions)]
                 "m" => {
                     println!("Micro Code");
-                    self.micro_code.iter().enumerate().for_each(|(i, instr)| {
-                        println!("Addr: {:02X}  Instr: {:?}", i, instr);
-                    });
+                    println!("{:?}", self.micro_code)
                 }
                 _ => {
                     if let Ok(addr) = input.parse() {
@@ -272,21 +303,21 @@ impl Machine {
     {
         for addr in indicies {
             let reg = ReadableMemory::read(&self.memory, addr)
-                .map_or_else(|(value, err)| value.ok_or(err), Ok)
-                .expect("Not out of bounds");
+                .map_or_else(|(value, _)| value.expect("Not out of bounds"), |&v| v);
+            // .expect("Not out of bounds");
             println!(
                 "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
                 addr,
-                reg,
-                reg.cast_signed()
+                u16::from(reg),
+                u16::from(reg).cast_signed()
             );
         }
     }
 
     pub fn pulse(&mut self) -> Result<()> {
-        match self.clock.subtick {
+        match self.clock.subtick(){
             Subtick::Load => {
-                if self.clock.tick == 0 {
+                if self.clock.tick() == 0 {
                     println!(
                         "Read in {} micro instructions",
                         self.read_micro_instructions
@@ -314,7 +345,7 @@ impl Machine {
         }
         // (&mut self.memory).action();//TODO: figure out how
 
-        if self.clock.subtick == Subtick::Load {
+        if self.clock.subtick() == Subtick::Load {
             match (self.mir.rd(), self.mir.wr()) {
                 (true, true) => {
                     // eprintln!("Should be halting");
@@ -322,12 +353,13 @@ impl Machine {
                 }
                 (false, true) => {
                     self.memory
-                        .write(self.mar as usize, self.mbr)
+                        .write(self.mar as usize, self.mbr.into())
                         .expect("Never out of bounds");
                 }
                 (true, false) => {
-                    self.mbr = *MutableMemory::read(&mut self.memory, self.mar as usize)
-                        .expect("Never read out of bounds");
+                    self.mbr = (*MutableMemory::read(&mut self.memory, self.mar as usize)
+                        .expect("Never read out of bounds"))
+                    .into();
                 }
                 (false, false) => {}
             }
@@ -351,7 +383,7 @@ impl Machine {
                     file: FileType::Program,
                 })
             })
-            .collect::<Result<Vec<_>, Mic1Error>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
         let read_machine_instructions = memory_vec.len();
         if read_machine_instructions > Self::MEMORY_SIZE {
             return Err(Mic1Error::ProgramTooLarge {
@@ -363,6 +395,7 @@ impl Machine {
 
         let memory = memory_vec
             .into_iter()
+            .map(io_mem::IOMem::from)
             .chain(iter::repeat(Default::default()))
             .take(Self::MEMORY_SIZE)
             .collect::<Vec<_>>()
