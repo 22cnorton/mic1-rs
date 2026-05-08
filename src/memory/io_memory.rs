@@ -24,12 +24,12 @@ pub struct IOMemory<
 }
 
 #[derive(Debug, Error, PartialEq, Eq, Hash, Clone, Copy)]
-pub enum IOMemoryError {
+pub enum IOMemoryError<T> {
     #[error("Out of bounds memory access at {0}")]
     OutOfBounds(usize),
 
-    #[error("Cannot receive as struct is immutable")]
-    ImmutableMemory,
+    #[error("Reading from immutable memory that performs action on read")]
+    ImmutableMemory { value: Option<T> },
 
     #[error("No characters from stdin")]
     NoCharacters,
@@ -60,12 +60,14 @@ where
     // const SIZE: usize = 0x1000;
     //Figure out how to get RO & RW memory to play nice so that there can RO machines
     type MemoryType = T;
-    type MemoryError = (Option<Self::MemoryType>, IOMemoryError);
+    type MemoryError = IOMemoryError<T>;
     fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         match index {
             i if i == RECEIVER_ADDRESS => {
                 if self.receiver_status().on() {
-                    Err((Some(*self.receiver()), IOMemoryError::ImmutableMemory))
+                    Err(IOMemoryError::ImmutableMemory {
+                        value: Some(*self.receiver()),
+                    })
                 } else {
                     Ok(self.receiver())
                 }
@@ -76,7 +78,7 @@ where
             _ => self
                 .memory
                 .read(index)
-                .or(Err((None, IOMemoryError::OutOfBounds(index)))),
+                .or(Err(IOMemoryError::OutOfBounds(index))),
         }
     }
 }
@@ -141,7 +143,7 @@ where
             _ => self
                 .memory
                 .write(index, value)
-                .or(Err((None, IOMemoryError::OutOfBounds(index)))),
+                .or(Err(IOMemoryError::OutOfBounds(index))),
         }
     }
 
@@ -158,7 +160,7 @@ where
                             }
 
                             Err(_) | Ok(_) => {
-                                return Err((None, IOMemoryError::NoCharacters));
+                                return Err(IOMemoryError::NoCharacters);
                             }
                         }
                     }
@@ -178,7 +180,7 @@ where
             _ => self
                 .memory
                 .read(index)
-                .or(Err((None, IOMemoryError::OutOfBounds(index)))),
+                .or(Err(IOMemoryError::OutOfBounds(index))),
         }
     }
 }

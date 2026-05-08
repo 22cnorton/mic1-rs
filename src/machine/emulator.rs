@@ -1,11 +1,12 @@
 use crate::cli::Mic1Args;
 use crate::io::MoloneyIOBits;
 use crate::machine::clock::{Clock, Subtick};
+use crate::memory::IOMemoryError;
 use crate::memory::immutable::ImmutableMemory;
 use crate::memory::traits::MutableMemory;
 use crate::memory::{IOMemory, traits::ReadableMemory};
 use crate::microcode::{self, MicroInstruction};
-use crate::registers::{self, RegisterSize};
+use crate::registers::{ RegisterSize, Registers};
 use anyhow::Result;
 use std::fmt::Debug;
 use std::fs::File;
@@ -81,7 +82,7 @@ pub struct Machine {
     memory: ArchIOMem<{ Self::MEMORY_SIZE }>,
     micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
 
-    registers: registers::Registers,
+    registers: Registers,
     blocking_io: bool,
     clock: Clock,
     mir: MicroInstruction,
@@ -101,7 +102,7 @@ impl Machine {
     pub const MICROCODE_LENGTH: usize = 256;
     #[allow(dead_code)]
     pub fn current_instruction(&self) -> &io_mem::IOMem {
-        ReadableMemory::read(&self.memory, self.registers.pc as usize)
+        ReadableMemory::read(&self.memory, self.registers.pc() as usize)
             .expect("Never read out of bounds")
     }
     #[allow(dead_code)]
@@ -191,12 +192,6 @@ impl Machine {
     fn store(&mut self) {
         if self.mir.enc() {
             self.registers.write_to_reg(self.mir.c(), self.c_bus);
-            // eprintln!("PC: {:016b}", self.registers.pc);
-            // eprintln!(
-            //     "Writing value {:016b} to register index {}",
-            //     self.c_bus,
-            //     self.mir.c()
-            // );
         }
         if self.mir.mbr() {
             self.mbr = self.c_bus;
@@ -297,15 +292,20 @@ impl Machine {
         I: Iterator<Item = usize>,
     {
         for addr in indicies {
-            let reg = ReadableMemory::read(&self.memory, addr)
-                .map_or_else(|(value, _)| value.expect("Not out of bounds"), |&v| v);
-            // .expect("Not out of bounds");
-            println!(
-                "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
-                addr,
-                u16::from(reg),
-                u16::from(reg).cast_signed()
-            );
+            if let Some(reg) = ReadableMemory::read(&self.memory, addr).map_or_else(
+                |value| match value {
+                    IOMemoryError::ImmutableMemory { value } => value,
+                    _ => None,
+                },
+                |&v| Some(v),
+            ) {
+                println!(
+                    "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
+                    addr,
+                    u16::from(reg),
+                    u16::from(reg).cast_signed()
+                );
+            }
         }
     }
 
@@ -323,11 +323,13 @@ impl Machine {
                     );
                     println!(
                         "{:<15}: {1:016b}  base 10: {1:7}",
-                        "Starting PC is", self.registers.pc
+                        "Starting PC is",
+                        self.registers.pc()
                     );
                     println!(
                         "{:<15}: {1:016b}  base 10: {1:7}",
-                        "Starting SP is", self.registers.sp
+                        "Starting SP is",
+                        self.registers.sp()
                     );
                     println!();
                 };
@@ -435,11 +437,7 @@ impl Machine {
             .expect("Only take MICROCODE_LENGTH from iterator"); // always safe since we took exactly MICROCODE_LENGTH
 
         Ok(Self {
-            registers: registers::Registers {
-                sp: args.stack_pointer(),
-                pc: args.program_counter(),
-                ..Default::default()
-            },
+            registers: Registers::new(args.stack_pointer(), args.program_counter()),
             memory,
             micro_code,
             mir,
