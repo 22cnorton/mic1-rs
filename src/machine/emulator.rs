@@ -6,7 +6,7 @@ use crate::memory::immutable::ImmutableMemory;
 use crate::memory::traits::MutableMemory;
 use crate::memory::{IOMemory, traits::ReadableMemory};
 use crate::microcode::{self, MicroInstruction};
-use crate::registers::{ RegisterSize, Registers};
+use crate::registers::{RegisterSize, Registers};
 use anyhow::Result;
 use std::fmt::Debug;
 use std::fs::File;
@@ -137,21 +137,16 @@ impl Machine {
         };
         let b_value = self.b_bus;
 
-        let c_value = self.alu(a_value, b_value, self.mir.alu());
+        let c_value = Self::alu(a_value, b_value, self.mir.alu());
         self.micro_pc = self.next_micro_instruction(c_value, self.mir.cond());
 
-        self.c_bus = self.shift(c_value, self.mir.sh());
+        self.c_bus = Self::shift(c_value, self.mir.sh());
         if self.mir.mbr() {
             self.mbr = self.c_bus;
         }
     }
 
-    fn alu(
-        &self,
-        a_value: RegisterSize,
-        b_value: RegisterSize,
-        op: microcode::Operation,
-    ) -> RegisterSize {
+    fn alu(a_value: RegisterSize, b_value: RegisterSize, op: microcode::Operation) -> RegisterSize {
         match op {
             microcode::Operation::Add => a_value.wrapping_add(b_value),
             microcode::Operation::And => a_value & b_value,
@@ -160,7 +155,7 @@ impl Machine {
         }
     }
 
-    fn shift(&self, value: RegisterSize, sh: microcode::Shift) -> RegisterSize {
+    fn shift(value: RegisterSize, sh: microcode::Shift) -> RegisterSize {
         match sh {
             microcode::Shift::None => value,
             microcode::Shift::Left => value << 1,
@@ -170,19 +165,19 @@ impl Machine {
 
     fn next_micro_instruction(&self, value: RegisterSize, cond: microcode::Jump) -> u8 {
         match cond {
-            microcode::Jump::None => self.micro_pc.saturating_add(1),
+            microcode::Jump::None => self.micro_pc.wrapping_add(1),
             microcode::Jump::Negative => {
                 if (value as i16) < 0 {
                     self.mir.addr()
                 } else {
-                    self.micro_pc.saturating_add(1)
+                    self.micro_pc.wrapping_add(1)
                 }
             }
             microcode::Jump::Zero => {
                 if value == 0 {
                     self.mir.addr()
                 } else {
-                    self.micro_pc.saturating_add(1)
+                    self.micro_pc.wrapping_add(1)
                 }
             }
             microcode::Jump::Always => self.mir.addr(),
