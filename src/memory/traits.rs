@@ -1,13 +1,17 @@
 use std::fmt::Debug;
 
-pub trait ReadableMemory<const SIZE: usize> {
+pub trait ReadableMemory {
     type MemoryType;
     type MemoryError;
     // const SIZE: usize;
     fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError>;
 }
 
-pub trait MutableMemory<const SIZE: usize>: ReadableMemory<SIZE> {
+pub trait WritableMemory{
+    
+}
+
+pub trait MutableMemory: ReadableMemory {
     //TODO: Split into readable and writeable traits
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError>;
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError>;

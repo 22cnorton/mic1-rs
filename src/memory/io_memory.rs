@@ -43,7 +43,7 @@ impl<
     const TRANSMITTER_ADDRESS: usize,
     const RECEIVER_STATUS_ADDRESS: usize,
     const RECEIVER_ADDRESS: usize,
-> ReadableMemory<S>
+> ReadableMemory
     for IOMemory<
         T,
         I,
@@ -90,7 +90,7 @@ impl<
     const TRANSMITTER_ADDRESS: usize,
     const RECEIVER_STATUS_ADDRESS: usize,
     const RECEIVER_ADDRESS: usize,
-> traits::MutableMemory<S>
+> traits::MutableMemory
     for IOMemory<
         T,
         I,
