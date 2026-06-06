@@ -3,7 +3,7 @@ use crate::memory::traits::ReadableMemory;
 #[repr(transparent)]
 pub struct ImmutableMemory<T, const S: usize>(Box<[T; S]>);
 
-impl<T, const S: usize> ReadableMemory<S> for ImmutableMemory<T, S> {
+impl<T, const S: usize> ReadableMemory for ImmutableMemory<T, S> {
     type MemoryType = T;
 
     type MemoryError = ();
