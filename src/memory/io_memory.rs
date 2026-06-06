@@ -1,6 +1,6 @@
 use crate::memory::{
     mutable,
-    traits::{self, IOBitsType, IOMemoryType, MutableMemory, ReadableMemory},
+    traits::{self, IOBitsType, IOMemoryType, ReadableMemory,WritableMemory},
 };
 use std::{collections::VecDeque, io::Write, marker::PhantomData};
 use thiserror::Error;
@@ -90,7 +90,7 @@ impl<
     const TRANSMITTER_ADDRESS: usize,
     const RECEIVER_STATUS_ADDRESS: usize,
     const RECEIVER_ADDRESS: usize,
-> traits::MutableMemory
+> traits::WritableMemory
     for IOMemory<
         T,
         I,
@@ -104,8 +104,8 @@ where
     T: IOMemoryType,
     I: IOBitsType<T>,
 {
-    // type MemoryType = T;
-    // type MemoryError = IOMemoryError;
+    type MemoryType = T;
+    type MemoryError = IOMemoryError<T>;
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
         match index {
             i if i == RECEIVER_STATUS_ADDRESS => {
@@ -146,7 +146,31 @@ where
                 .or(Err(IOMemoryError::OutOfBounds(index))),
         }
     }
-
+}
+impl<
+    T,
+    I,
+    const S: usize,
+    const TRANSMITTER_STATUS_ADDRESS: usize,
+    const TRANSMITTER_ADDRESS: usize,
+    const RECEIVER_STATUS_ADDRESS: usize,
+    const RECEIVER_ADDRESS: usize,
+> traits::MutableReadableMemory
+    for IOMemory<
+        T,
+        I,
+        S,
+        TRANSMITTER_STATUS_ADDRESS,
+        TRANSMITTER_ADDRESS,
+        RECEIVER_STATUS_ADDRESS,
+        RECEIVER_ADDRESS,
+    >
+where
+    T: IOMemoryType,
+    I: IOBitsType<T>,
+{
+    type MemoryType = T;
+    type MemoryError = IOMemoryError<T>;
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         match index {
             i if i == RECEIVER_ADDRESS => {

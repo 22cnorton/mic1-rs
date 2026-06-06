@@ -1,10 +1,10 @@
 use crate::cli::Mic1Args;
 use crate::io::MoloneyIOBits;
 use crate::machine::clock::{Clock, Subtick};
+use crate::memory::IOMemory;
 use crate::memory::IOMemoryError;
 use crate::memory::immutable::ImmutableMemory;
-use crate::memory::traits::MutableMemory;
-use crate::memory::{IOMemory, traits::ReadableMemory};
+use crate::memory::traits::{MutableReadableMemory, ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{RegisterSize, Registers};
 use anyhow::Result;
@@ -348,7 +348,7 @@ impl Machine {
                         .expect("Never out of bounds");
                 }
                 (true, false) => {
-                    self.mbr = (*MutableMemory::read(&mut self.memory, self.mar as usize)
+                    self.mbr = (*MutableReadableMemory::read(&mut self.memory, self.mar as usize)
                         .expect("Never read out of bounds"))
                     .into();
                 }

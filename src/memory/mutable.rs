@@ -32,11 +32,18 @@ impl<T, const S: usize> From<[T; S]> for MutableMemory<T, S> {
     }
 }
 
-impl<T, const S: usize> traits::MutableMemory for MutableMemory<T, S> {
+impl<T, const S: usize> traits::WritableMemory for MutableMemory<T, S> {
+    type MemoryType = T;
+    type MemoryError = ();
+
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
         *self.0.get_mut(index).ok_or(())? = value;
         Ok(())
     }
+}
+impl<T, const S: usize> traits::MutableReadableMemory for MutableMemory<T, S> {
+    type MemoryType = T;
+    type MemoryError = ();
 
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         self.0.get(index).ok_or(())
@@ -45,7 +52,6 @@ impl<T, const S: usize> traits::MutableMemory for MutableMemory<T, S> {
 
 impl<T, const S: usize> traits::ReadableMemory for MutableMemory<T, S> {
     type MemoryType = T;
-
     type MemoryError = ();
 
     fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
