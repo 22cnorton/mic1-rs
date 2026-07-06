@@ -1,5 +1,5 @@
 use crate::{
-    io::MoloneyIOBits,
+    io::IOBits,
     memory::{
         mutable,
         traits::{self, ReadableMemory, WritableMemory},
@@ -66,11 +66,11 @@ impl traits::WritableMemory for IOMemory {
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
         match index {
             i if i == Self::RECEIVER_STATUS_ADDRESS => {
-                let bit_value = MoloneyIOBits::from(value);
+                let bit_value = IOBits::from(value);
                 self.set_receiver_status(if bit_value.on() {
                     bit_value.with_busy(false).with_done(true)
                 } else {
-                    MoloneyIOBits::default()
+                    IOBits::default()
                 });
                 Ok(())
             }
@@ -88,12 +88,12 @@ impl traits::WritableMemory for IOMemory {
                 Ok(())
             }
             i if i == Self::TRANSMITTER_STATUS_ADDRESS => {
-                let bit_value = MoloneyIOBits::from(value);
+                let bit_value = IOBits::from(value);
 
                 self.set_transmitter_status(if bit_value.on() {
                     bit_value.with_done(true).with_busy(false)
                 } else {
-                    MoloneyIOBits::default()
+                    IOBits::default()
                 });
                 Ok(())
             }
@@ -166,20 +166,20 @@ impl IOMemory {
         self.memory.write(Self::TRANSMITTER_ADDRESS, value).unwrap();
     }
 
-    pub fn receiver_status(&self) -> MoloneyIOBits {
-        MoloneyIOBits::from(*self.memory.read(Self::RECEIVER_STATUS_ADDRESS).unwrap())
+    pub fn receiver_status(&self) -> IOBits {
+        IOBits::from(*self.memory.read(Self::RECEIVER_STATUS_ADDRESS).unwrap())
     }
 
-    pub fn transmitter_status(&self) -> MoloneyIOBits {
-        MoloneyIOBits::from(*self.memory.read(Self::TRANSMITTER_STATUS_ADDRESS).unwrap())
+    pub fn transmitter_status(&self) -> IOBits {
+        IOBits::from(*self.memory.read(Self::TRANSMITTER_STATUS_ADDRESS).unwrap())
     }
 
-    pub fn set_transmitter_status(&mut self, transmitter_status: MoloneyIOBits) {
+    pub fn set_transmitter_status(&mut self, transmitter_status: IOBits) {
         self.memory
             .write(Self::TRANSMITTER_STATUS_ADDRESS, transmitter_status.into())
             .unwrap();
     }
-    pub fn set_receiver_status(&mut self, receiver_status: MoloneyIOBits) {
+    pub fn set_receiver_status(&mut self, receiver_status: IOBits) {
         self.memory
             .write(Self::RECEIVER_STATUS_ADDRESS, receiver_status.into())
             .unwrap();
