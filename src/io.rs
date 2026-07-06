@@ -1,7 +1,7 @@
 use bitfield_struct::bitfield;
 #[bitfield(u16, hash = true, order = msb)]
 #[derive(Eq, PartialEq)]
-pub struct MoloneyIOBits {
+pub struct IOBits {
     #[bits(12)]
     _padding: u16,
     #[bits(1, default = false)]
@@ -14,7 +14,7 @@ pub struct MoloneyIOBits {
     pub busy: bool,
 }
 
-impl MoloneyIOBits {
+impl IOBits {
     pub fn can_write(self) -> bool {
         !self.busy() && !self.done()
     }
