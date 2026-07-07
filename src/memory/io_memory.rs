@@ -2,7 +2,7 @@ use crate::{
     io::IOBits,
     memory::{
         mutable,
-        traits::{self, ReadableMemory, WritableMemory},
+        traits::{MutableReadableMemory, ReadableMemory, WritableMemory},
     },
 };
 use std::{collections::VecDeque, io::Write};
@@ -10,16 +10,16 @@ use thiserror::Error;
 // const SIZE: usize = 0x1000;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 pub struct IOMemory {
-    memory: mutable::MutableMemory<u16, 0x1000>,
+    memory: mutable::MutableMemory<u16, { Self::MEMORY_SIZE }>,
     input_buf: VecDeque<Option<u8>>,
 }
 
 impl IOMemory {
-    const S: usize = 0x1000;
-    const TRANSMITTER_STATUS_ADDRESS: usize = { IOMemory::S - 1 };
-    const TRANSMITTER_ADDRESS: usize = { IOMemory::S - 2 };
-    const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::S - 3 };
-    const RECEIVER_ADDRESS: usize = { IOMemory::S - 4 };
+    const MEMORY_SIZE: usize = 0x1000;
+    const TRANSMITTER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 1 };
+    const TRANSMITTER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 2 };
+    const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 3 };
+    const RECEIVER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 4 };
 }
 
 #[derive(Debug, Error, PartialEq, Eq, Hash, Clone, Copy)]
@@ -60,7 +60,7 @@ impl ReadableMemory for IOMemory {
         }
     }
 }
-impl traits::WritableMemory for IOMemory {
+impl WritableMemory for IOMemory {
     type MemoryType = u16;
     type MemoryError = IOMemoryError<u16>;
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
@@ -104,7 +104,7 @@ impl traits::WritableMemory for IOMemory {
         }
     }
 }
-impl traits::MutableReadableMemory for IOMemory {
+impl MutableReadableMemory for IOMemory {
     type MemoryType = u16;
     type MemoryError = IOMemoryError<u16>;
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
