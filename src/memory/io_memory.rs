@@ -204,8 +204,8 @@ impl TryFrom<Vec<u16>> for IOMemory {
         })
     }
 }
-impl From<[u16; 0x1000]> for IOMemory {
-    fn from(value: [u16; 0x1000]) -> Self {
+impl From<[u16; Self::MEMORY_SIZE]> for IOMemory {
+    fn from(value: [u16; Self::MEMORY_SIZE]) -> Self {
         Self {
             memory: value.into(),
             input_buf: Default::default(),
