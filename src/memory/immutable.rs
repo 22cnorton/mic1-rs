@@ -3,12 +3,10 @@ use crate::memory::traits::ReadableMemory;
 #[repr(transparent)]
 pub struct ImmutableMemory<T, const S: usize>(Box<[T; S]>);
 
-impl<T, const S: usize> ReadableMemory for ImmutableMemory<T, S> {
-    type MemoryType = T;
-
+impl<T, const S: usize> ReadableMemory<T> for ImmutableMemory<T, S> {
     type MemoryError = ();
 
-    fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
+    fn read(&mut self, index: usize) -> Result<&T, Self::MemoryError> {
         self.0.get(index).ok_or(())
     }
 }
