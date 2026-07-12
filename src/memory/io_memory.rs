@@ -2,7 +2,7 @@ use crate::{
     io::IOBits,
     memory::{
         mutable,
-        traits::{MutableReadableMemory, ReadableMemory, WritableMemory},
+        traits::{ ReadableMemory, WritableMemory},
     },
 };
 use std::{collections::VecDeque, io::Write};
@@ -13,6 +13,7 @@ pub struct IOMemory {
     memory: mutable::MutableMemory<u16, { Self::MEMORY_SIZE }>,
     input_buf: VecDeque<Option<u8>>,
 }
+type MemoryType = u16;
 
 impl IOMemory {
     const MEMORY_SIZE: usize = 0x1000;
@@ -20,50 +21,51 @@ impl IOMemory {
     const TRANSMITTER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 2 };
     const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 3 };
     const RECEIVER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 4 };
+    
 }
 
 #[derive(Debug, Error, PartialEq, Eq, Hash, Clone, Copy)]
-pub enum IOMemoryError<T> {
+pub enum IOMemoryError {
     #[error("Out of bounds memory access at {0}")]
     OutOfBounds(usize),
 
-    #[error("Reading from immutable memory that performs action on read")]
-    ImmutableMemory { value: Option<T> },
+    // #[error("Reading from immutable memory that performs action on read")]
+    // ImmutableMemory { value: Option<T> },
 
     #[error("No characters from stdin")]
     NoCharacters,
 }
 
-impl ReadableMemory for IOMemory {
-    // const SIZE: usize = 0x1000;
-    //Figure out how to get RO & RW memory to play nice so that there can RO machines
-    type MemoryType = u16;
-    type MemoryError = IOMemoryError<u16>;
-    fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
-        match index {
-            i if i == Self::RECEIVER_ADDRESS => {
-                if self.receiver_status().on() {
-                    Err(IOMemoryError::ImmutableMemory {
-                        value: Some(*self.receiver()),
-                    })
-                } else {
-                    Ok(self.receiver())
-                }
-            }
-            i if i == Self::TRANSMITTER_ADDRESS => Ok(self.transmitter()),
-            // Self::RECEIVER_STATUS_ADDRESS => Ok(&self.memory[index]),
-            // Self::TRANSMITTER_STATUS_ADDRESS => Ok(&self.memory[index]),
-            _ => self
-                .memory
-                .read(index)
-                .or(Err(IOMemoryError::OutOfBounds(index))),
-        }
-    }
-}
-impl WritableMemory for IOMemory {
-    type MemoryType = u16;
-    type MemoryError = IOMemoryError<u16>;
-    fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
+// impl ReadableMemory<u16> for IOMemory {
+//     // const SIZE: usize = 0x1000;
+//     //Figure out how to get RO & RW memory to play nice so that there can RO machines
+//     // type MemoryType = u16;
+//     type MemoryError = IOMemoryError<u16>;
+//     fn read(&self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
+//         match index {
+//             i if i == Self::RECEIVER_ADDRESS => {
+//                 if self.receiver_status().on() {
+//                     Err(IOMemoryError::ImmutableMemory {
+//                         value: Some(*self.receiver()),
+//                     })
+//                 } else {
+//                     Ok(self.receiver())
+//                 }
+//             }
+//             i if i == Self::TRANSMITTER_ADDRESS => Ok(self.transmitter()),
+//             // Self::RECEIVER_STATUS_ADDRESS => Ok(&self.memory[index]),
+//             // Self::TRANSMITTER_STATUS_ADDRESS => Ok(&self.memory[index]),
+//             _ => self
+//                 .memory
+//                 .read(index)
+//                 .or(Err(IOMemoryError::OutOfBounds(index))),
+//         }
+//     }
+// }
+impl WritableMemory<MemoryType> for IOMemory {
+    // type MemoryType = u16;
+    type MemoryError = IOMemoryError;
+    fn write(&mut self, index: usize, value: MemoryType) -> Result<(), Self::MemoryError> {
         match index {
             i if i == Self::RECEIVER_STATUS_ADDRESS => {
                 let bit_value = IOBits::from(value);
@@ -81,8 +83,9 @@ impl WritableMemory for IOMemory {
                         .write_all(&[((*self.transmitter()) & 0xFF) as u8])
                         .unwrap();
                     // std::io::stdout().flush().unwrap();
+                    let status= self.transmitter_status().with_done(true).with_busy(false);
                     self.set_transmitter_status(
-                        self.transmitter_status().with_done(true).with_busy(false), // .with_interupt(true),
+                       status, // .with_interupt(true),
                     );
                 }
                 Ok(())
@@ -104,10 +107,10 @@ impl WritableMemory for IOMemory {
         }
     }
 }
-impl MutableReadableMemory for IOMemory {
-    type MemoryType = u16;
-    type MemoryError = IOMemoryError<u16>;
-    fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
+impl ReadableMemory<MemoryType> for IOMemory {
+    // type MemoryType = u16;
+    type MemoryError = IOMemoryError;
+    fn read(&mut self, index: usize) -> Result<&MemoryType, Self::MemoryError> {
         match index {
             i if i == Self::RECEIVER_ADDRESS => {
                 if self.receiver_status().can_read() {
@@ -127,9 +130,8 @@ impl MutableReadableMemory for IOMemory {
                     // eprintln!("{:?}", self.input_buf);
                     if let Some(Some(byte)) = self.input_buf.pop_front() {
                         self.set_receiver(u16::from(byte));
-                        self.set_receiver_status(
-                            self.receiver_status().with_busy(false).with_done(true),
-                        );
+                        let status = self.receiver_status().with_busy(false).with_done(true);
+                        self.set_receiver_status(status);
                         self.input_buf.push_front(None);
                     }
                 }
@@ -150,7 +152,7 @@ impl IOMemory {
         self.memory.len()
     }
 
-    fn receiver(&self) -> &u16 {
+    fn receiver(&mut self) -> &u16 {
         self.memory.read(Self::RECEIVER_ADDRESS).unwrap()
     }
 
@@ -158,7 +160,7 @@ impl IOMemory {
         self.memory.write(Self::RECEIVER_ADDRESS, value).unwrap();
     }
 
-    fn transmitter(&self) -> &u16 {
+    fn transmitter(&mut self) -> &u16 {
         self.memory.read(Self::TRANSMITTER_ADDRESS).unwrap()
     }
 
@@ -166,11 +168,11 @@ impl IOMemory {
         self.memory.write(Self::TRANSMITTER_ADDRESS, value).unwrap();
     }
 
-    pub fn receiver_status(&self) -> IOBits {
+    pub fn receiver_status(&mut self) -> IOBits {
         IOBits::from(*self.memory.read(Self::RECEIVER_STATUS_ADDRESS).unwrap())
     }
 
-    pub fn transmitter_status(&self) -> IOBits {
+    pub fn transmitter_status(&mut self) -> IOBits {
         IOBits::from(*self.memory.read(Self::TRANSMITTER_STATUS_ADDRESS).unwrap())
     }
 

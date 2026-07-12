@@ -1,9 +1,8 @@
 use crate::cli::Mic1Args;
 use crate::machine::clock::{Clock, Subtick};
 use crate::memory::IOMemory;
-use crate::memory::IOMemoryError;
 use crate::memory::immutable::ImmutableMemory;
-use crate::memory::traits::{MutableReadableMemory, ReadableMemory, WritableMemory};
+use crate::memory::traits::{ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{RegisterSize, Registers};
 use anyhow::Result;
@@ -38,8 +37,10 @@ impl Machine {
     pub const MEMORY_SIZE: usize = 4096;
     pub const MICROCODE_LENGTH: usize = 256;
     #[allow(dead_code)]
-    pub fn current_instruction(&self) -> u16 {
-        *ReadableMemory::read(&self.memory, self.registers.pc() as usize)
+    pub fn current_instruction(&mut self) -> u16 {
+        *self
+            .memory
+            .read(self.registers.pc() as usize)
             .expect("Never read out of bounds")
     }
     #[allow(dead_code)]
@@ -47,7 +48,7 @@ impl Machine {
         self.mir
     }
 
-    fn instruction_at(&self, addr: u8) -> MicroInstruction {
+    fn instruction_at(&mut self, addr: u8) -> MicroInstruction {
         *self
             .micro_code
             .read(addr as usize)
@@ -218,19 +219,13 @@ impl Machine {
         }
     }
 
-    fn display_memory<I>(&self, indicies: I)
+    fn display_memory<I>(&mut self, indicies: I)
     //TODO: refactor into Display trait on Memory
     where
         I: Iterator<Item = usize>,
     {
         for addr in indicies {
-            if let Some(reg) = ReadableMemory::read(&self.memory, addr).map_or_else(
-                |value| match value {
-                    IOMemoryError::ImmutableMemory { value } => value,
-                    _ => None,
-                },
-                |&v| Some(v),
-            ) {
+            if let Some(&reg) = self.memory.read(addr).ok() {
                 println!(
                     "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
                     addr,
@@ -285,7 +280,9 @@ impl Machine {
                         .expect("Never out of bounds");
                 }
                 (true, false) => {
-                    self.mbr = (*MutableReadableMemory::read(&mut self.memory, self.mar as usize)
+                    self.mbr = (*self
+                        .memory
+                        .read(self.mar as usize)
                         .expect("Never read out of bounds"))
                     .into();
                 }
