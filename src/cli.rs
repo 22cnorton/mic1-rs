@@ -1,14 +1,19 @@
-use std::path::PathBuf;
+use std::{
+    fs::File,
+    io::{self, BufRead},
+    path::PathBuf,
+};
 
 use clap::Parser;
+use either::Either;
 
 use crate::machine::{Machine, Mic1Error};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub(crate) struct Mic1Args {
-    #[arg(long, default_value = "prom.dat")]
-    prom: PathBuf,
+    #[arg(long)]
+    prom: Option<PathBuf>,
 
     #[arg(long, default_value = "inner.dat")]
     program: PathBuf,
@@ -21,8 +26,18 @@ pub(crate) struct Mic1Args {
 }
 
 impl Mic1Args {
-    pub(crate) fn prom(&self) -> &PathBuf {
-        &self.prom
+    pub(crate) fn prom_path(&self) -> Option<&PathBuf> {
+        self.prom.as_ref()
+    }
+
+    pub(crate) fn prom_data(&self) -> impl Iterator<Item = String>{
+        if let Some(path) = &self.prom {
+            if let Ok(file) = File::open(path) {
+                return Either::Left(io::BufReader::new(file).lines().flatten());
+            }
+        }
+
+        Either::Right(include_str!("../prom.dat").lines().map(String::from))
     }
 
     pub(crate) fn program(&self) -> &PathBuf {

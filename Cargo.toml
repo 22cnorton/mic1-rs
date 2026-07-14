@@ -7,4 +7,5 @@ edition = "2024"
 anyhow = "1.0.102"
 bitfield-struct = "0.13.0"
 clap = { version = "4.6.1", features = ["derive"] }
+either = "1.16.0"
 thiserror = "2.0.18"
