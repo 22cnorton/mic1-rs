@@ -13,9 +13,9 @@ use std::io::{self, BufRead};
 use std::iter;
 use thiserror::Error;
 
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+#[derive(Debug)]
 pub struct Machine {
-    memory: IOMemory,
+    memory: IOMemory<std::io::BufReader<std::io::Stdin>, std::io::Stdout>,
     micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
 
     registers: Registers,

@@ -2,26 +2,32 @@ use crate::{
     io::IOBits,
     memory::{
         mutable,
-        traits::{ ReadableMemory, WritableMemory},
+        traits::{ReadableMemory, WritableMemory},
     },
 };
-use std::{collections::VecDeque, io::Write};
+use std::{
+    collections::VecDeque,
+    io::{BufRead, Write},
+};
 use thiserror::Error;
-// const SIZE: usize = 0x1000;
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
-pub struct IOMemory {
-    memory: mutable::MutableMemory<u16, { Self::MEMORY_SIZE }>,
+
+const MEMORY_SIZE: usize = 0x1000;
+
+#[derive(Debug)]
+pub struct IOMemory<R: BufRead, W: Write> {
+    memory: mutable::MutableMemory<u16, { MEMORY_SIZE }>,
     input_buf: VecDeque<Option<u8>>,
+
+    input_stream: R,
+    output_stream: W,
 }
 type MemoryType = u16;
 
-impl IOMemory {
-    const MEMORY_SIZE: usize = 0x1000;
-    const TRANSMITTER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 1 };
-    const TRANSMITTER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 2 };
-    const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 3 };
-    const RECEIVER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 4 };
-    
+impl<R: BufRead, W: Write> IOMemory<R, W> {
+    const TRANSMITTER_STATUS_ADDRESS: usize = { MEMORY_SIZE - 1 };
+    const TRANSMITTER_ADDRESS: usize = { MEMORY_SIZE - 2 };
+    const RECEIVER_STATUS_ADDRESS: usize = { MEMORY_SIZE - 3 };
+    const RECEIVER_ADDRESS: usize = { MEMORY_SIZE - 4 };
 }
 
 #[derive(Debug, Error, PartialEq, Eq, Hash, Clone, Copy)]
@@ -31,7 +37,6 @@ pub enum IOMemoryError {
 
     // #[error("Reading from immutable memory that performs action on read")]
     // ImmutableMemory { value: Option<T> },
-
     #[error("No characters from stdin")]
     NoCharacters,
 }
@@ -62,7 +67,7 @@ pub enum IOMemoryError {
 //         }
 //     }
 // }
-impl WritableMemory<MemoryType> for IOMemory {
+impl<R: BufRead, W: Write> WritableMemory<MemoryType> for IOMemory<R, W> {
     // type MemoryType = u16;
     type MemoryError = IOMemoryError;
     fn write(&mut self, index: usize, value: MemoryType) -> Result<(), Self::MemoryError> {
@@ -77,15 +82,15 @@ impl WritableMemory<MemoryType> for IOMemory {
                 Ok(())
             }
             i if i == Self::TRANSMITTER_ADDRESS => {
+                // eprintln!("{}",self.transmitter_status().can_write());
                 if self.transmitter_status().can_write() {
                     self.set_transmitter(value);
-                    std::io::stdout()
-                        .write_all(&[((*self.transmitter()) & 0xFF) as u8])
-                        .unwrap();
+                    let transmit_byte = ((*self.transmitter()) & 0xFF) as u8;
+                    self.output_stream.write_all(&[transmit_byte]).unwrap();
                     // std::io::stdout().flush().unwrap();
-                    let status= self.transmitter_status().with_done(true).with_busy(false);
+                    let status = self.transmitter_status().with_done(true).with_busy(false);
                     self.set_transmitter_status(
-                       status, // .with_interupt(true),
+                        status, // .with_interupt(true),
                     );
                 }
                 Ok(())
@@ -107,7 +112,7 @@ impl WritableMemory<MemoryType> for IOMemory {
         }
     }
 }
-impl ReadableMemory<MemoryType> for IOMemory {
+impl<R: BufRead, W: Write> ReadableMemory<MemoryType> for IOMemory<R, W> {
     // type MemoryType = u16;
     type MemoryError = IOMemoryError;
     fn read(&mut self, index: usize) -> Result<&MemoryType, Self::MemoryError> {
@@ -117,7 +122,7 @@ impl ReadableMemory<MemoryType> for IOMemory {
                     if self.input_buf.is_empty() {
                         let mut buf = Default::default();
 
-                        match std::io::stdin().read_line(&mut buf) {
+                        match self.input_stream.read_line(&mut buf) {
                             Ok(s) if s > 0 => {
                                 self.input_buf.extend(buf.bytes().map(Some));
                             }
@@ -147,7 +152,7 @@ impl ReadableMemory<MemoryType> for IOMemory {
     }
 }
 
-impl IOMemory {
+impl<R: BufRead, W: Write> IOMemory<R, W> {
     pub fn len(&self) -> usize {
         self.memory.len()
     }
@@ -187,30 +192,36 @@ impl IOMemory {
             .unwrap();
     }
 }
-impl Default for IOMemory {
+impl<R: BufRead + Default, W: Write + Default> Default for IOMemory<R, W> {
     fn default() -> Self {
         Self {
             memory: Default::default(),
             input_buf: Default::default(),
+            input_stream: R::default(),
+            output_stream: W::default(),
         }
     }
 }
 
-impl TryFrom<Vec<u16>> for IOMemory {
+impl TryFrom<Vec<u16>> for IOMemory<std::io::BufReader<std::io::Stdin>, std::io::Stdout> {
     type Error = Vec<u16>;
 
     fn try_from(value: Vec<u16>) -> Result<Self, Self::Error> {
         Ok(Self {
             memory: value.try_into()?,
             input_buf: Default::default(),
+            input_stream: std::io::BufReader::new(std::io::stdin()),
+            output_stream: std::io::stdout(),
         })
     }
 }
-impl From<[u16; Self::MEMORY_SIZE]> for IOMemory {
-    fn from(value: [u16; Self::MEMORY_SIZE]) -> Self {
+impl From<[u16; MEMORY_SIZE]> for IOMemory<std::io::BufReader<std::io::Stdin>, std::io::Stdout> {
+    fn from(value: [u16; MEMORY_SIZE]) -> Self {
         Self {
             memory: value.into(),
             input_buf: Default::default(),
+            input_stream: std::io::BufReader::new(std::io::stdin()),
+            output_stream: std::io::stdout(),
         }
     }
 }
