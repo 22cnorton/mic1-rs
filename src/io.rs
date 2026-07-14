@@ -16,10 +16,10 @@ pub struct IOBits {
 
 impl IOBits {
     pub fn can_write(self) -> bool {
-        !self.busy() && !self.done()
+        !self.busy() && self.done() && self.on()
     }
 
     pub fn can_read(self) -> bool {
-        !self.busy() && self.done()
+        !self.busy() && self.done() && self.on()
     }
 }
