@@ -7,23 +7,23 @@ use crate::{
 };
 use std::{
     collections::VecDeque,
-    io::{BufRead, Write},
+    io::{BufRead, BufReader, Read, Write},
 };
 use thiserror::Error;
 
 const MEMORY_SIZE: usize = 0x1000;
 
 #[derive(Debug)]
-pub struct IOMemory<R: BufRead, W: Write> {
+pub struct IOMemory<R: Read, W: Write> {
     memory: mutable::MutableMemory<u16, { MEMORY_SIZE }>,
     input_buf: VecDeque<Option<u8>>,
 
-    input_stream: R,
+    input_stream: BufReader<R>,
     output_stream: W,
 }
 type MemoryType = u16;
 
-impl<R: BufRead, W: Write> IOMemory<R, W> {
+impl<R: Read, W: Write> IOMemory<R, W> {
     const TRANSMITTER_STATUS_ADDRESS: usize = { MEMORY_SIZE - 1 };
     const TRANSMITTER_ADDRESS: usize = { MEMORY_SIZE - 2 };
     const RECEIVER_STATUS_ADDRESS: usize = { MEMORY_SIZE - 3 };
@@ -67,7 +67,7 @@ pub enum IOMemoryError {
 //         }
 //     }
 // }
-impl<R: BufRead, W: Write> WritableMemory<MemoryType> for IOMemory<R, W> {
+impl<R: Read, W: Write> WritableMemory<MemoryType> for IOMemory<R, W> {
     // type MemoryType = u16;
     type MemoryError = IOMemoryError;
     fn write(&mut self, index: usize, value: MemoryType) -> Result<(), Self::MemoryError> {
@@ -112,7 +112,7 @@ impl<R: BufRead, W: Write> WritableMemory<MemoryType> for IOMemory<R, W> {
         }
     }
 }
-impl<R: BufRead, W: Write> ReadableMemory<MemoryType> for IOMemory<R, W> {
+impl<R: Read, W: Write> ReadableMemory<MemoryType> for IOMemory<R, W> {
     // type MemoryType = u16;
     type MemoryError = IOMemoryError;
     fn read(&mut self, index: usize) -> Result<&MemoryType, Self::MemoryError> {
@@ -152,7 +152,7 @@ impl<R: BufRead, W: Write> ReadableMemory<MemoryType> for IOMemory<R, W> {
     }
 }
 
-impl<R: BufRead, W: Write> IOMemory<R, W> {
+impl<R: Read, W: Write> IOMemory<R, W> {
     pub fn len(&self) -> usize {
         self.memory.len()
     }
@@ -192,36 +192,47 @@ impl<R: BufRead, W: Write> IOMemory<R, W> {
             .unwrap();
     }
 }
-impl<R: BufRead + Default, W: Write + Default> Default for IOMemory<R, W> {
+impl<R: Read + Default, W: Write + Default> Default for IOMemory<R, W> {
     fn default() -> Self {
         Self {
             memory: Default::default(),
             input_buf: Default::default(),
-            input_stream: R::default(),
+            input_stream: BufReader::new(R::default()),
             output_stream: W::default(),
         }
     }
 }
 
-impl TryFrom<Vec<u16>> for IOMemory<std::io::BufReader<std::io::Stdin>, std::io::Stdout> {
+impl<R: Read, W: Write> IOMemory<R, W> {
+    pub fn try_from_vec(value: Vec<u16>,reader:R,writer:W) -> Result<Self, Vec<u16>> {
+        Ok(Self {
+            memory: value.try_into()?,
+            input_buf: Default::default(),
+            input_stream: BufReader::new(reader),
+            output_stream: writer
+        })
+    }
+}
+
+impl<R: Read + Default, W: Write + Default> TryFrom<Vec<u16>> for IOMemory<R, W> {
     type Error = Vec<u16>;
 
     fn try_from(value: Vec<u16>) -> Result<Self, Self::Error> {
         Ok(Self {
             memory: value.try_into()?,
             input_buf: Default::default(),
-            input_stream: std::io::BufReader::new(std::io::stdin()),
-            output_stream: std::io::stdout(),
+            input_stream: BufReader::new(R::default()),
+            output_stream: W::default(),
         })
     }
 }
-impl From<[u16; MEMORY_SIZE]> for IOMemory<std::io::BufReader<std::io::Stdin>, std::io::Stdout> {
+impl<R: Read + Default, W: Write + Default> From<[u16; MEMORY_SIZE]> for IOMemory<R, W> {
     fn from(value: [u16; MEMORY_SIZE]) -> Self {
         Self {
             memory: value.into(),
             input_buf: Default::default(),
-            input_stream: std::io::BufReader::new(std::io::stdin()),
-            output_stream: std::io::stdout(),
+            input_stream: BufReader::new(R::default()),
+            output_stream: W::default(),
         }
     }
 }

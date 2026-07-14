@@ -15,7 +15,7 @@ use thiserror::Error;
 
 #[derive(Debug)]
 pub struct Machine {
-    memory: IOMemory<std::io::BufReader<std::io::Stdin>, std::io::Stdout>,
+    memory: IOMemory<std::io::Stdin, std::io::Stdout>,
     micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
 
     registers: Registers,
@@ -318,13 +318,16 @@ impl Machine {
             });
         }
 
-        let memory = memory_vec
-            .into_iter()
-            .chain(iter::repeat(Default::default()))
-            .take(Self::MEMORY_SIZE)
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("Only took MEMORY_SIZE from iterator");
+        let memory = IOMemory::try_from_vec(
+            memory_vec
+                .into_iter()
+                .chain(iter::repeat(Default::default()))
+                .take(Self::MEMORY_SIZE)
+                .collect::<Vec<_>>(),
+            std::io::stdin(),
+            std::io::stdout(),
+        )
+        .expect("Only took MEMORY_SIZE from iterator");
 
         let prom_file = File::open(args.prom())?;
         let prom_vec = io::BufReader::new(prom_file)
