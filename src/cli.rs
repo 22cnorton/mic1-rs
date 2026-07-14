@@ -15,7 +15,7 @@ pub(crate) struct Mic1Args {
     #[arg(long)]
     prom: Option<PathBuf>,
 
-    #[arg(long, default_value = "inner.dat")]
+    #[arg(long)]
     program: PathBuf,
 
     #[arg(long, default_value_t = 0)]
