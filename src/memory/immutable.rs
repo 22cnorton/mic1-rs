@@ -1,3 +1,5 @@
+use std::array;
+
 use crate::memory::traits::ReadableMemory;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 #[repr(transparent)]
@@ -23,3 +25,12 @@ impl<T, const S: usize> From<[T; S]> for ImmutableMemory<T, S> {
         Self(value.into())
     }
 }
+
+impl<T: Default, const S: usize> Default for ImmutableMemory<T, S> {
+    fn default() -> Self {
+        let vec = array::from_fn(|_| Default::default());
+        Self(vec.into())
+    }
+}
+
+

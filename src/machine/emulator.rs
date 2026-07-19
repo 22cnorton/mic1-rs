@@ -2,7 +2,7 @@ use crate::cli::Mic1Args;
 use crate::machine::clock::{Clock, Subtick};
 use crate::memory::IOMemory;
 use crate::memory::immutable::ImmutableMemory;
-use crate::memory::traits::{ReadableMemory, WritableMemory};
+use crate::memory::traits::{Memory, ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{RegisterSize, Registers};
 use anyhow::Result;
@@ -13,7 +13,7 @@ use std::io::{self, BufRead};
 use std::iter;
 use thiserror::Error;
 
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+#[derive(Eq, PartialEq, Debug, Clone, Hash, Default)]
 pub struct Machine {
     memory: IOMemory,
     micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
