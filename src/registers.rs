@@ -1,11 +1,16 @@
 use core::fmt;
 
+use derive_builder::Builder;
+
 pub type RegisterSize = u16;
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Builder)]
+#[builder(setter(skip), default)]
 pub struct Registers {
+    #[builder(setter, default)]
     pc: RegisterSize,
     ac: RegisterSize,
+    #[builder(setter, default)]
     sp: RegisterSize,
     ir: RegisterSize,
     tir: RegisterSize,
@@ -57,14 +62,6 @@ impl fmt::Display for Registers {
 }
 
 impl Registers {
-    pub fn new(stack_pointer: RegisterSize, program_counter: RegisterSize) -> Self {
-        Self {
-            pc: program_counter,
-            sp: stack_pointer,
-            ..Default::default()
-        }
-    }
-
     pub fn sp(&self) -> RegisterSize {
         self.sp
     }
