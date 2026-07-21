@@ -5,12 +5,10 @@ use derive_builder::Builder;
 pub type RegisterSize = u16;
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Builder)]
-#[builder(setter(skip), default)]
+#[builder(default)]
 pub struct Registers {
-    #[builder(setter, default)]
     pc: RegisterSize,
     ac: RegisterSize,
-    #[builder(setter, default)]
     sp: RegisterSize,
     ir: RegisterSize,
     tir: RegisterSize,
