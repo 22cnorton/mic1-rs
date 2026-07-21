@@ -118,22 +118,12 @@ impl Registers {
 impl Default for Registers {
     fn default() -> Self {
         Self {
-            pc: Default::default(),
-            ac: Default::default(),
-            sp: Default::default(),
-            ir: Default::default(),
-            tir: Default::default(),
             zero: (0),
             one: (1),
             neg_one: (u16::MAX),
             amask: (0x0FFF),
             smask: (0x00FF),
-            a: Default::default(),
-            b: Default::default(),
-            c: Default::default(),
-            d: Default::default(),
-            e: Default::default(),
-            f: Default::default(),
+            ..[Default::default(); _].into()
         }
     }
 }
