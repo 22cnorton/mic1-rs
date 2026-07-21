@@ -6,6 +6,7 @@ use crate::memory::traits::{Memory, ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{RegisterSize, Registers};
 use anyhow::Result;
+use derive_builder::Builder;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
@@ -13,11 +14,16 @@ use std::io::{self, BufRead};
 use std::iter;
 use thiserror::Error;
 
-#[derive(Eq, PartialEq, Debug, Clone, Hash, Default)]
+const MICROCODE_LENGTH: usize = 256;
+#[derive(Eq, PartialEq, Debug, Clone, Hash, Default, Builder)]
+#[builder(setter(skip))]
 pub struct Machine {
+    #[builder(setter)]
     memory: IOMemory,
-    micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
+    #[builder(setter)]
+    micro_code: ImmutableMemory<MicroInstruction, { MICROCODE_LENGTH }>,
 
+    #[builder(setter)]
     registers: Registers,
     blocking_io: bool,
     clock: Clock,
@@ -35,7 +41,7 @@ pub struct Machine {
 
 impl Machine {
     pub const MEMORY_SIZE: usize = 4096;
-    pub const MICROCODE_LENGTH: usize = 256;
+    pub const MICROCODE_LENGTH: usize = MICROCODE_LENGTH;
     #[allow(dead_code)]
     pub fn current_instruction(&mut self) -> u16 {
         *self
