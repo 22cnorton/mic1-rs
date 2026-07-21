@@ -4,7 +4,7 @@ use crate::memory::IOMemory;
 use crate::memory::immutable::ImmutableMemory;
 use crate::memory::traits::{Memory, ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
-use crate::registers::{RegisterSize, Registers};
+use crate::registers::{RegisterSize, Registers, RegistersBuilder};
 use anyhow::Result;
 use derive_builder::Builder;
 use std::fmt::Debug;
@@ -371,7 +371,11 @@ impl Machine {
             .expect("Only take MICROCODE_LENGTH from iterator"); // always safe since we took exactly MICROCODE_LENGTH
 
         Ok(Self {
-            registers: Registers::new(args.stack_pointer(), args.program_counter()),
+            registers: RegistersBuilder::default()
+                .sp(args.stack_pointer())
+                .pc(args.program_counter())
+                .build()
+                .expect("All registers should have valid default values"),
             memory,
             micro_code,
             mir,
