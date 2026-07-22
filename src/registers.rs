@@ -96,48 +96,11 @@ impl Registers {
     }
 
     pub fn read_from_reg(&self, index: u8) -> RegisterSize {
-        match index {
-            0 => self.pc,
-            1 => self.ac,
-            2 => self.sp,
-            3 => self.ir,
-            4 => self.tir,
-            5 => self.zero,
-            6 => self.one,
-            7 => self.neg_one,
-            8 => self.amask,
-            9 => self.smask,
-            10 => self.a,
-            11 => self.b,
-            12 => self.c,
-            13 => self.d,
-            14 => self.e,
-            15 => self.f,
-            _ => panic!("Invalid register index: {}", index),
-        }
+        self[index]
     }
 
     pub fn write_to_reg(&mut self, index: u8, value: RegisterSize) {
-        // eprintln!("Writing value {:016b} to register index {}", value, index);
-        match index {
-            0 => self.pc = value,
-            1 => self.ac = value,
-            2 => self.sp = value,
-            3 => self.ir = value,
-            4 => self.tir = value,
-            5 => self.zero = value,
-            6 => self.one = value,
-            7 => self.neg_one = value,
-            8 => self.amask = value,
-            9 => self.smask = value,
-            10 => self.a = value,
-            11 => self.b = value,
-            12 => self.c = value,
-            13 => self.d = value,
-            14 => self.e = value,
-            15 => self.f = value,
-            _ => panic!("Invalid register index: {}", index),
-        }
+        self[index] = value;
     }
 }
 
