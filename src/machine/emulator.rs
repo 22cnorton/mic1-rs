@@ -4,8 +4,9 @@ use crate::memory::IOMemory;
 use crate::memory::immutable::ImmutableMemory;
 use crate::memory::traits::{ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
-use crate::registers::{RegisterSize, Registers};
+use crate::registers::{RegisterSize, Registers, RegistersBuilder};
 use anyhow::Result;
+use derive_builder::Builder;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
@@ -13,14 +14,20 @@ use std::io::{self, BufRead};
 use std::iter;
 use thiserror::Error;
 
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+const MICROCODE_LENGTH: usize = 256;
+#[derive(Eq, PartialEq, Debug, Clone, Hash, Default, Builder)]
+#[builder(setter(skip))]
 pub struct Machine {
+    #[builder(setter)]
     memory: IOMemory,
-    micro_code: ImmutableMemory<MicroInstruction, { Self::MICROCODE_LENGTH }>,
+    #[builder(setter)]
+    micro_code: ImmutableMemory<MicroInstruction, { MICROCODE_LENGTH }>,
 
-    registers: Registers,
+    #[builder(setter)]
+    registers: Registers<RegisterSize>,
     blocking_io: bool,
     clock: Clock,
+    #[builder(private)]
     mir: MicroInstruction,
     micro_pc: u8,
     a_bus: RegisterSize,
@@ -35,12 +42,12 @@ pub struct Machine {
 
 impl Machine {
     pub const MEMORY_SIZE: usize = 4096;
-    pub const MICROCODE_LENGTH: usize = 256;
+    pub const MICROCODE_LENGTH: usize = MICROCODE_LENGTH;
     #[allow(dead_code)]
     pub fn current_instruction(&mut self) -> u16 {
         *self
             .memory
-            .read(self.registers.pc() as usize)
+            .read(*self.registers.pc() as usize)
             .expect("Never read out of bounds")
     }
     #[allow(dead_code)]
@@ -60,8 +67,8 @@ impl Machine {
     }
 
     fn gate(&mut self) {
-        self.a_bus = self.registers.read_from_reg(self.mir.a());
-        self.b_bus = self.registers.read_from_reg(self.mir.b());
+        self.a_bus = *self.registers.read_from_reg(self.mir.a() as usize);
+        self.b_bus = *self.registers.read_from_reg(self.mir.b() as usize);
     }
 
     fn calc(&mut self) {
@@ -124,7 +131,8 @@ impl Machine {
 
     fn store(&mut self) {
         if self.mir.enc() {
-            self.registers.write_to_reg(self.mir.c(), self.c_bus);
+            self.registers
+                .write_to_reg(self.mir.c() as usize, self.c_bus);
         }
         if self.mir.mbr() {
             self.mbr = self.c_bus;
@@ -365,7 +373,11 @@ impl Machine {
             .expect("Only take MICROCODE_LENGTH from iterator"); // always safe since we took exactly MICROCODE_LENGTH
 
         Ok(Self {
-            registers: Registers::new(args.stack_pointer(), args.program_counter()),
+            registers: RegistersBuilder::default()
+                .sp(args.stack_pointer())
+                .pc(args.program_counter())
+                .build()
+                .expect("All registers should have valid default values"),
             memory,
             micro_code,
             mir,

@@ -1,28 +1,41 @@
 use core::fmt;
+use std::{
+    fmt::{Binary, Display},
+    ops::{Index, IndexMut},
+};
+
+use derive_builder::Builder;
+use getset::{Getters, Setters, WithSetters};
 
 pub type RegisterSize = u16;
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
-pub struct Registers {
-    pc: RegisterSize,
-    ac: RegisterSize,
-    sp: RegisterSize,
-    ir: RegisterSize,
-    tir: RegisterSize,
-    zero: RegisterSize,
-    one: RegisterSize,
-    neg_one: RegisterSize,
-    amask: RegisterSize,
-    smask: RegisterSize,
-    a: RegisterSize,
-    b: RegisterSize,
-    c: RegisterSize,
-    d: RegisterSize,
-    e: RegisterSize,
-    f: RegisterSize,
+#[repr(C)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Builder, Getters, Setters, WithSetters)]
+#[builder]
+#[getset(get = "pub", set = "pub")]
+pub struct Registers<T> {
+    pc: T,
+    ac: T,
+    sp: T,
+    ir: T,
+    tir: T,
+    zero: T,
+    one: T,
+    neg_one: T,
+    amask: T,
+    smask: T,
+    a: T,
+    b: T,
+    c: T,
+    d: T,
+    e: T,
+    f: T,
 }
 
-impl fmt::Display for Registers {
+impl<T> fmt::Display for Registers<T>
+where
+    T: Binary + Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -56,87 +69,92 @@ impl fmt::Display for Registers {
     }
 }
 
-impl Registers {
-    pub fn new(stack_pointer: RegisterSize, program_counter: RegisterSize) -> Self {
-        Self {
-            pc: program_counter,
-            sp: stack_pointer,
-            ..Default::default()
+impl<T> Index<usize> for Registers<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if index > 15 {
+            panic!("Invalid register index: {}", index);
         }
-    }
-
-    pub fn sp(&self) -> RegisterSize {
-        self.sp
-    }
-    pub fn pc(&self) -> RegisterSize {
-        self.pc
-    }
-
-    pub fn read_from_reg(&self, index: u8) -> RegisterSize {
-        match index {
-            0 => self.pc,
-            1 => self.ac,
-            2 => self.sp,
-            3 => self.ir,
-            4 => self.tir,
-            5 => self.zero,
-            6 => self.one,
-            7 => self.neg_one,
-            8 => self.amask,
-            9 => self.smask,
-            10 => self.a,
-            11 => self.b,
-            12 => self.c,
-            13 => self.d,
-            14 => self.e,
-            15 => self.f,
-            _ => panic!("Invalid register index: {}", index),
-        }
-    }
-
-    pub fn write_to_reg(&mut self, index: u8, value: RegisterSize) {
-        // eprintln!("Writing value {:016b} to register index {}", value, index);
-        match index {
-            0 => self.pc = value,
-            1 => self.ac = value,
-            2 => self.sp = value,
-            3 => self.ir = value,
-            4 => self.tir = value,
-            5 => self.zero = value,
-            6 => self.one = value,
-            7 => self.neg_one = value,
-            8 => self.amask = value,
-            9 => self.smask = value,
-            10 => self.a = value,
-            11 => self.b = value,
-            12 => self.c = value,
-            13 => self.d = value,
-            14 => self.e = value,
-            15 => self.f = value,
-            _ => panic!("Invalid register index: {}", index),
+        unsafe {
+            let array_ptr = self as *const _ as *const [_; 16];
+            &(*array_ptr)[index as usize]
         }
     }
 }
 
-impl Default for Registers {
+impl<T> IndexMut<usize> for Registers<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        if index > 15 {
+            panic!("Invalid register index: {}", index);
+        }
+        unsafe {
+            let array_ptr = self as *mut _ as *mut [_; 16];
+            &mut (*array_ptr)[index as usize]
+        }
+    }
+}
+
+impl<T> Registers<T> {
+    pub fn read_from_reg(&self, index: usize) -> &T {
+        &self[index]
+    }
+
+    pub fn write_to_reg(&mut self, index: usize, value: T) {
+        self[index] = value;
+    }
+}
+
+impl Default for Registers<u16> {
     fn default() -> Self {
         Self {
-            pc: Default::default(),
-            ac: Default::default(),
-            sp: Default::default(),
-            ir: Default::default(),
-            tir: Default::default(),
             zero: (0),
             one: (1),
             neg_one: (u16::MAX),
             amask: (0x0FFF),
             smask: (0x00FF),
-            a: Default::default(),
-            b: Default::default(),
-            c: Default::default(),
-            d: Default::default(),
-            e: Default::default(),
-            f: Default::default(),
+            ..[Default::default(); _].into()
+        }
+    }
+}
+
+impl<T> From<[T; 16]> for Registers<T> {
+    fn from(value: [T; 16]) -> Self {
+        let [
+            pc,
+            ac,
+            sp,
+            ir,
+            tir,
+            zero,
+            one,
+            neg_one,
+            amask,
+            smask,
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+        ] = value;
+        Self {
+            pc,
+            ac,
+            sp,
+            ir,
+            tir,
+            zero,
+            one,
+            neg_one,
+            amask,
+            smask,
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
         }
     }
 }
