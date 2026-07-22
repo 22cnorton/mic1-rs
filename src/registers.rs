@@ -119,23 +119,6 @@ impl Default for Registers {
 
 impl From<[RegisterSize; 16]> for Registers {
     fn from(value: [RegisterSize; 16]) -> Self {
-        Self {
-            pc: value[0],
-            ac: value[1],
-            sp: value[2],
-            ir: value[3],
-            tir: value[4],
-            zero: value[5],
-            one: value[6],
-            neg_one: value[7],
-            amask: value[8],
-            smask: value[9],
-            a: value[10],
-            b: value[11],
-            c: value[12],
-            d: value[13],
-            e: value[14],
-            f: value[15],
-        }
+        unsafe { std::mem::transmute(value) }
     }
 }
