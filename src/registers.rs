@@ -1,9 +1,11 @@
 use core::fmt;
+use std::ops::{Index, IndexMut};
 
 use derive_builder::Builder;
 
 pub type RegisterSize = u16;
 
+#[repr(C)]
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Builder)]
 #[builder(default)]
 pub struct Registers {
@@ -56,6 +58,32 @@ impl fmt::Display for Registers {
         write!(f, "{:<15}: {1:016b}  base 10: {1:7}", "FRegister", self.f)?;
 
         Ok(())
+    }
+}
+
+impl Index<u8> for Registers {
+    type Output = RegisterSize;
+
+    fn index(&self, index: u8) -> &Self::Output {
+        if index > 15 {
+            panic!("Invalid register index: {}", index);
+        }
+        unsafe {
+            let array_ptr = self as *const _ as *const [_; 16];
+            &(*array_ptr)[index as usize]
+        }
+    }
+}
+
+impl IndexMut<u8> for Registers {
+    fn index_mut(&mut self, index: u8) -> &mut Self::Output {
+        if index > 15 {
+            panic!("Invalid register index: {}", index);
+        }
+        unsafe {
+            let array_ptr = self as *mut _ as *mut [_; 16];
+            &mut (*array_ptr)[index as usize]
+        }
     }
 }
 
