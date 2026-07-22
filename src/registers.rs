@@ -2,12 +2,14 @@ use core::fmt;
 use std::ops::{Index, IndexMut};
 
 use derive_builder::Builder;
+use getset::{Getters, Setters, WithSetters};
 
 pub type RegisterSize = u16;
 
 #[repr(C)]
-#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Builder)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Builder, Getters, Setters, WithSetters)]
 #[builder(default)]
+#[getset(get = "pub", set = "pub")]
 pub struct Registers {
     pc: RegisterSize,
     ac: RegisterSize,
@@ -88,13 +90,6 @@ impl IndexMut<u8> for Registers {
 }
 
 impl Registers {
-    pub fn sp(&self) -> RegisterSize {
-        self.sp
-    }
-    pub fn pc(&self) -> RegisterSize {
-        self.pc
-    }
-
     pub fn read_from_reg(&self, index: u8) -> RegisterSize {
         self[index]
     }
