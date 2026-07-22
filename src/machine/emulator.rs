@@ -2,7 +2,7 @@ use crate::cli::Mic1Args;
 use crate::machine::clock::{Clock, Subtick};
 use crate::memory::IOMemory;
 use crate::memory::immutable::ImmutableMemory;
-use crate::memory::traits::{Memory, ReadableMemory, WritableMemory};
+use crate::memory::traits::{ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
 use crate::registers::{RegisterSize, Registers, RegistersBuilder};
 use anyhow::Result;
@@ -24,9 +24,10 @@ pub struct Machine {
     micro_code: ImmutableMemory<MicroInstruction, { MICROCODE_LENGTH }>,
 
     #[builder(setter)]
-    registers: Registers,
+    registers: Registers<RegisterSize>,
     blocking_io: bool,
     clock: Clock,
+    #[builder(private)]
     mir: MicroInstruction,
     micro_pc: u8,
     a_bus: RegisterSize,
@@ -66,8 +67,8 @@ impl Machine {
     }
 
     fn gate(&mut self) {
-        self.a_bus = self.registers.read_from_reg(self.mir.a());
-        self.b_bus = self.registers.read_from_reg(self.mir.b());
+        self.a_bus = *self.registers.read_from_reg(self.mir.a() as usize);
+        self.b_bus = *self.registers.read_from_reg(self.mir.b() as usize);
     }
 
     fn calc(&mut self) {
@@ -130,7 +131,8 @@ impl Machine {
 
     fn store(&mut self) {
         if self.mir.enc() {
-            self.registers.write_to_reg(self.mir.c(), self.c_bus);
+            self.registers
+                .write_to_reg(self.mir.c() as usize, self.c_bus);
         }
         if self.mir.mbr() {
             self.mbr = self.c_bus;
