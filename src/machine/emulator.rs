@@ -46,7 +46,7 @@ impl Machine {
     pub fn current_instruction(&mut self) -> u16 {
         *self
             .memory
-            .read(self.registers.pc() as usize)
+            .read(*self.registers.pc() as usize)
             .expect("Never read out of bounds")
     }
     #[allow(dead_code)]
