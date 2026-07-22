@@ -334,16 +334,10 @@ impl Machine {
             .try_into()
             .expect("Only took MEMORY_SIZE from iterator");
 
-        let prom_file = File::open(args.prom())?;
-        let prom_vec = io::BufReader::new(prom_file)
-            .lines()
+        let prom_vec = args
+            .prom_data()
             .enumerate()
-            .filter(|(_, line)| match line {
-                Ok(l) => l.chars().all(|c| c == '0' || c == '1'),
-                Err(_) => false,
-            })
-            .map(|(i, line_result)| {
-                let line = line_result?;
+            .map(|(i, line)| {
                 u32::from_str_radix(line.trim(), 2)
                     .map_err(|e| Mic1Error::ParseError {
                         line: i + 1,
