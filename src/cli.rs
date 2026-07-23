@@ -7,8 +7,6 @@ use std::{
 use clap::Parser;
 use either::Either;
 
-use crate::machine::{Machine, Mic1Error};
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub(crate) struct Mic1Args {
@@ -48,7 +46,16 @@ impl Mic1Args {
         Either::Right(include_str!("../prom.dat").lines().map(String::from))
     }
 
-    pub(crate) fn program(&self) -> &PathBuf {
+    pub(crate) fn memory_data(&self) -> io::Result<impl Iterator<Item = String>> {
+        let file = File::open(self.program_path())?;
+
+        Ok(io::BufReader::new(file)
+            .lines()
+            .flatten()
+            .filter(|line| !line.chars().all(char::is_whitespace)))
+    }
+
+    pub(crate) fn program_path(&self) -> &PathBuf {
         &self.program
     }
 
@@ -59,8 +66,4 @@ impl Mic1Args {
     pub(crate) fn stack_pointer(&self) -> u16 {
         self.stack_pointer
     }
-}
-
-pub fn initalize_machine() -> Result<Machine, Mic1Error> {
-    Machine::from_args(Mic1Args::parse())
 }

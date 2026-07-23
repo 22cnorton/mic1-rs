@@ -1,18 +1,15 @@
-use crate::cli::Mic1Args;
 use crate::machine::clock::{Clock, Subtick};
 use crate::memory::IOMemory;
 use crate::memory::immutable::ImmutableMemory;
-use crate::memory::traits::{Memory, ReadableMemory, WritableMemory};
+use crate::memory::traits::{ReadableMemory, WritableMemory};
 use crate::microcode::{self, MicroInstruction};
-use crate::registers::{RegisterSize, Registers, RegistersBuilder};
+use crate::registers::{RegisterSize, Registers};
 use anyhow::Result;
 use derive_builder::Builder;
 use std::fmt::Debug;
-use std::fs::File;
 use std::io::Write;
-use std::io::{self, BufRead};
+use std::io::{self};
 use std::iter;
-use thiserror::Error;
 
 const MICROCODE_LENGTH: usize = 256;
 #[derive(Eq, PartialEq, Debug, Clone, Hash, Default, Builder)]
@@ -27,7 +24,7 @@ pub struct Machine {
     registers: Registers,
     blocking_io: bool,
     clock: Clock,
-    #[builder(private)]
+    #[builder(default = "self.default_mir()?")]
     mir: MicroInstruction,
     micro_pc: u8,
     a_bus: RegisterSize,
@@ -41,8 +38,6 @@ pub struct Machine {
 }
 
 impl Machine {
-    pub const MEMORY_SIZE: usize = 4096;
-    pub const MICROCODE_LENGTH: usize = MICROCODE_LENGTH;
     #[allow(dead_code)]
     pub fn current_instruction(&mut self) -> u16 {
         *self
@@ -301,119 +296,16 @@ impl Machine {
         self.clock.pulse();
         Ok(())
     }
+}
 
-    pub fn from_args(args: Mic1Args) -> Result<Self, Mic1Error> {
-        let program_file = File::open(args.program())?;
-        let memory_vec = io::BufReader::new(program_file)
-            .lines()
-            .enumerate()
-            .map(|(i, line_result)| {
-                let line: String = line_result?;
-                u16::from_str_radix(line.trim(), 2).map_err(|e| Mic1Error::ParseError {
-                    line: i + 1,
-                    content: line,
-                    source: e,
-                    file: FileType::Program,
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let read_machine_instructions = memory_vec.len();
-        if read_machine_instructions > Self::MEMORY_SIZE {
-            return Err(Mic1Error::ProgramTooLarge {
-                size: read_machine_instructions,
-                max: Self::MEMORY_SIZE,
-                file: FileType::Program,
-            });
-        }
-
-        let memory = memory_vec
-            .into_iter()
-            .chain(iter::repeat(Default::default()))
-            .take(Self::MEMORY_SIZE)
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("Only took MEMORY_SIZE from iterator");
-
-        let prom_vec = args
-            .prom_data()
-            .enumerate()
-            .map(|(i, line)| {
-                u32::from_str_radix(line.trim(), 2)
-                    .map_err(|e| Mic1Error::ParseError {
-                        line: i + 1,
-                        content: line,
-                        source: e,
-                        file: FileType::Microcode,
-                    })
-                    .map(MicroInstruction::from_bits)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let read_micro_instructions = prom_vec.len();
-        if read_micro_instructions > Self::MICROCODE_LENGTH {
-            return Err(Mic1Error::ProgramTooLarge {
-                size: read_micro_instructions,
-                max: Self::MICROCODE_LENGTH,
-                file: FileType::Microcode,
-            });
-        }
-
-        let mir = prom_vec[0];
-        let micro_code = prom_vec
-            .into_iter()
-            .chain(iter::repeat(Default::default()))
-            .take(Self::MICROCODE_LENGTH) // Take exactly MICROCODE_LENGTH
-            .collect::<Vec<_>>() // Collect to Vec temporarily
-            .try_into()
-            .expect("Only take MICROCODE_LENGTH from iterator"); // always safe since we took exactly MICROCODE_LENGTH
-
-        Ok(Self {
-            registers: RegistersBuilder::default()
-                .sp(args.stack_pointer())
-                .pc(args.program_counter())
-                .build()
-                .expect("All registers should have valid default values"),
-            memory,
-            micro_code,
-            mir,
-            clock: Default::default(),
-            blocking_io: false,
-            micro_pc: Default::default(),
-            a_bus: Default::default(),
-            b_bus: Default::default(),
-            c_bus: Default::default(),
-            mbr: Default::default(),
-            mar: Default::default(),
-
-            read_machine_instructions: read_machine_instructions.try_into().unwrap(),
-            read_micro_instructions: read_micro_instructions.try_into().unwrap(),
-        })
+impl MachineBuilder {
+    fn default_mir(&self) -> Result<MicroInstruction, String> {
+        let mir = self
+            .micro_code
+            .as_ref()
+            .ok_or("Missing Microcode")?
+            .immutable_read(0)
+            .ok_or("Failed Read")?;
+        Ok(*mir)
     }
-}
-
-#[derive(Error, Debug)]
-pub enum Mic1Error {
-    #[error("failed to read program file: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("invalid data in {file:?} at line {line}: '{content}'")]
-    ParseError {
-        line: usize,
-        content: String,
-        #[source]
-        source: std::num::ParseIntError,
-        file: FileType,
-    },
-
-    #[error("program size ({size}) exceeds maximum memory of {max}")]
-    ProgramTooLarge {
-        size: usize,
-        max: usize,
-        file: FileType,
-    },
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub enum FileType {
-    Microcode,
-    Program,
 }
