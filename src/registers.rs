@@ -29,7 +29,10 @@ pub struct Registers {
     f: RegisterSize,
 }
 
-impl fmt::Display for Registers {
+impl<T> fmt::Display for Registers<T>
+where
+    T: Binary + Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -99,7 +102,7 @@ impl Registers {
     }
 }
 
-impl Default for Registers {
+impl Default for Registers<u16> {
     fn default() -> Self {
         Self {
             zero: (0),

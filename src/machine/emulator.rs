@@ -27,6 +27,7 @@ pub struct Machine {
     registers: Registers,
     blocking_io: bool,
     clock: Clock,
+    #[builder(private)]
     mir: MicroInstruction,
     micro_pc: u8,
     a_bus: RegisterSize,
@@ -66,8 +67,8 @@ impl Machine {
     }
 
     fn gate(&mut self) {
-        self.a_bus = self.registers.read_from_reg(self.mir.a());
-        self.b_bus = self.registers.read_from_reg(self.mir.b());
+        self.a_bus = *self.registers.read_from_reg(self.mir.a() as usize);
+        self.b_bus = *self.registers.read_from_reg(self.mir.b() as usize);
     }
 
     fn calc(&mut self) {
@@ -130,7 +131,8 @@ impl Machine {
 
     fn store(&mut self) {
         if self.mir.enc() {
-            self.registers.write_to_reg(self.mir.c(), self.c_bus);
+            self.registers
+                .write_to_reg(self.mir.c() as usize, self.c_bus);
         }
         if self.mir.mbr() {
             self.mbr = self.c_bus;
