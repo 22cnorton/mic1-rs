@@ -29,10 +29,7 @@ pub struct Registers {
     f: RegisterSize,
 }
 
-impl<T> fmt::Display for Registers<T>
-where
-    T: Binary + Display,
-{
+impl fmt::Display for Registers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -66,10 +63,10 @@ where
     }
 }
 
-impl Index<u8> for Registers {
+impl Index<usize> for Registers {
     type Output = RegisterSize;
 
-    fn index(&self, index: u8) -> &Self::Output {
+    fn index(&self, index: usize) -> &Self::Output {
         if index > 15 {
             panic!("Invalid register index: {}", index);
         }
@@ -80,8 +77,8 @@ impl Index<u8> for Registers {
     }
 }
 
-impl IndexMut<u8> for Registers {
-    fn index_mut(&mut self, index: u8) -> &mut Self::Output {
+impl IndexMut<usize> for Registers {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         if index > 15 {
             panic!("Invalid register index: {}", index);
         }
@@ -93,16 +90,16 @@ impl IndexMut<u8> for Registers {
 }
 
 impl Registers {
-    pub fn read_from_reg(&self, index: u8) -> RegisterSize {
-        self[index]
+    pub fn read_from_reg(&self, index: usize) -> &RegisterSize {
+        &self[index]
     }
 
-    pub fn write_to_reg(&mut self, index: u8, value: RegisterSize) {
+    pub fn write_to_reg(&mut self, index: usize, value: RegisterSize) {
         self[index] = value;
     }
 }
 
-impl Default for Registers<u16> {
+impl Default for Registers {
     fn default() -> Self {
         Self {
             zero: (0),
