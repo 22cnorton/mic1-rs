@@ -31,6 +31,14 @@ pub struct MicroInstruction {
     pub(crate) addr: u8, // next address to go to
 }
 
+impl crate::memory::traits::FromBinaryStr for MicroInstruction {
+    type Error = std::num::ParseIntError;
+
+    fn from_binary_str(s: &str) -> Result<Self, Self::Error> {
+        Ok(MicroInstruction::from_bits(u32::from_str_radix(s, 2)?))
+    }
+}
+
 #[bitenum]
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
