@@ -36,7 +36,12 @@ impl Mic1Args {
     pub(crate) fn prom_data(&self) -> impl Iterator<Item = String> {
         if let Some(path) = &self.prom_path() {
             if let Ok(file) = File::open(path) {
-                return Either::Left(io::BufReader::new(file).lines().flatten());
+                return Either::Left(
+                    io::BufReader::new(file)
+                        .lines()
+                        .flatten()
+                        .filter(|line| !line.chars().all(char::is_whitespace)),
+                );
             }
         }
 
