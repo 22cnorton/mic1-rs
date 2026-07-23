@@ -1,8 +1,5 @@
 use core::fmt;
-use std::{
-    fmt::{Binary, Display},
-    ops::{Index, IndexMut},
-};
+use std::ops::{Index, IndexMut};
 
 use derive_builder::Builder;
 use getset::{Getters, Setters, WithSetters};
@@ -11,25 +8,25 @@ pub type RegisterSize = u16;
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Builder, Getters, Setters, WithSetters)]
-#[builder]
+#[builder(default)]
 #[getset(get = "pub", set = "pub")]
-pub struct Registers<T> {
-    pc: T,
-    ac: T,
-    sp: T,
-    ir: T,
-    tir: T,
-    zero: T,
-    one: T,
-    neg_one: T,
-    amask: T,
-    smask: T,
-    a: T,
-    b: T,
-    c: T,
-    d: T,
-    e: T,
-    f: T,
+pub struct Registers {
+    pc: RegisterSize,
+    ac: RegisterSize,
+    sp: RegisterSize,
+    ir: RegisterSize,
+    tir: RegisterSize,
+    zero: RegisterSize,
+    one: RegisterSize,
+    neg_one: RegisterSize,
+    amask: RegisterSize,
+    smask: RegisterSize,
+    a: RegisterSize,
+    b: RegisterSize,
+    c: RegisterSize,
+    d: RegisterSize,
+    e: RegisterSize,
+    f: RegisterSize,
 }
 
 impl<T> fmt::Display for Registers<T>
@@ -69,10 +66,10 @@ where
     }
 }
 
-impl<T> Index<usize> for Registers<T> {
-    type Output = T;
+impl Index<u8> for Registers {
+    type Output = RegisterSize;
 
-    fn index(&self, index: usize) -> &Self::Output {
+    fn index(&self, index: u8) -> &Self::Output {
         if index > 15 {
             panic!("Invalid register index: {}", index);
         }
@@ -83,8 +80,8 @@ impl<T> Index<usize> for Registers<T> {
     }
 }
 
-impl<T> IndexMut<usize> for Registers<T> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+impl IndexMut<u8> for Registers {
+    fn index_mut(&mut self, index: u8) -> &mut Self::Output {
         if index > 15 {
             panic!("Invalid register index: {}", index);
         }
@@ -95,12 +92,12 @@ impl<T> IndexMut<usize> for Registers<T> {
     }
 }
 
-impl<T> Registers<T> {
-    pub fn read_from_reg(&self, index: usize) -> &T {
-        &self[index]
+impl Registers {
+    pub fn read_from_reg(&self, index: u8) -> RegisterSize {
+        self[index]
     }
 
-    pub fn write_to_reg(&mut self, index: usize, value: T) {
+    pub fn write_to_reg(&mut self, index: u8, value: RegisterSize) {
         self[index] = value;
     }
 }
@@ -118,43 +115,8 @@ impl Default for Registers<u16> {
     }
 }
 
-impl<T> From<[T; 16]> for Registers<T> {
-    fn from(value: [T; 16]) -> Self {
-        let [
-            pc,
-            ac,
-            sp,
-            ir,
-            tir,
-            zero,
-            one,
-            neg_one,
-            amask,
-            smask,
-            a,
-            b,
-            c,
-            d,
-            e,
-            f,
-        ] = value;
-        Self {
-            pc,
-            ac,
-            sp,
-            ir,
-            tir,
-            zero,
-            one,
-            neg_one,
-            amask,
-            smask,
-            a,
-            b,
-            c,
-            d,
-            e,
-            f,
-        }
+impl From<[RegisterSize; 16]> for Registers {
+    fn from(value: [RegisterSize; 16]) -> Self {
+        unsafe { std::mem::transmute(value) }
     }
 }
