@@ -28,8 +28,7 @@ fn main() -> anyhow::Result<()> {
             RegistersBuilder::default()
                 .sp(args.stack_pointer())
                 .pc(args.program_counter())
-                .build()
-                .unwrap(),
+                .build()?,
         )
         .build()?;
 
