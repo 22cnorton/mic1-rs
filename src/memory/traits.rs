@@ -1,13 +1,12 @@
 pub trait ReadableMemory<MemoryType> {
-    // type MemoryType;
     type MemoryError;
-    // const SIZE: usize;
+
     fn read(&mut self, index: usize) -> Result<&MemoryType, Self::MemoryError>;
 }
 
 pub trait WritableMemory<MemoryType> {
-    // type MemoryType;
     type MemoryError;
+    
     fn write(&mut self, index: usize, value: MemoryType) -> Result<(), Self::MemoryError>;
 }
 

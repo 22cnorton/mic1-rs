@@ -55,7 +55,6 @@ where
                 ImmutableMemoryFromBinaryStrLinesError::ParseError {
                     line: i + 1,
                     content: line.as_ref().into(),
-                    // source: e,
                 }
             })?);
         }

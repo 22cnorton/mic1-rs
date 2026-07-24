@@ -274,7 +274,6 @@ impl Machine {
         if self.clock.subtick() == Subtick::Load {
             match (self.mir.rd(), self.mir.wr()) {
                 (true, true) => {
-                    // eprintln!("Should be halting");
                     self.halt()?;
                 }
                 (false, true) => {
