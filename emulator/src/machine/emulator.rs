@@ -1,14 +1,17 @@
-use crate::machine::clock::{Clock, Subtick};
-use crate::memory::IOMemory;
-use crate::memory::immutable::ImmutableMemory;
-use crate::memory::traits::{ReadableMemory, WritableMemory};
-use crate::microcode::{self, MicroInstruction};
-use crate::registers::{RegisterSize, Registers};
+use crate::machine::{
+    clock::{Clock, Subtick},
+    microcode::{self, MicroInstruction},
+    registers::{RegisterSize, Registers},
+};
+use crate::memory::{
+    IOMemory,
+    immutable::ImmutableMemory,
+    traits::{ReadableMemory, WritableMemory},
+};
 use anyhow::Result;
 use derive_builder::Builder;
 use std::fmt::Debug;
-use std::io::Write;
-use std::io::{self};
+use std::io::{self, Write};
 use std::iter;
 
 const MICROCODE_LENGTH: usize = 256;

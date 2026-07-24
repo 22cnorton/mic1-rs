@@ -1,18 +1,9 @@
-use crate::{
-    cli::Mic1Args,
-    machine::MachineBuilder,
-    memory::{IOMemory, immutable::ImmutableMemory, traits::FromBinaryStrLines},
-    registers::RegistersBuilder,
-};
-
 use clap::Parser;
+use emulator::{machine::{MachineBuilder, registers::RegistersBuilder}, memory::{IOMemory, immutable::ImmutableMemory, traits::FromBinaryStrLines}};
+
+use crate::cli::Mic1Args;
 
 mod cli;
-mod io;
-mod machine;
-mod memory;
-mod microcode;
-mod registers;
 
 fn main() -> anyhow::Result<()> {
     let args = Mic1Args::parse();

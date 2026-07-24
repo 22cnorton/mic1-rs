@@ -43,7 +43,7 @@ impl Mic1Args {
             }
         }
 
-        Either::Right(include_str!("../prom.dat").lines().map(String::from))
+        Either::Right(include_str!("../../prom.dat").lines().map(String::from))
     }
 
     pub(crate) fn memory_data(&self) -> io::Result<impl Iterator<Item = String>> {

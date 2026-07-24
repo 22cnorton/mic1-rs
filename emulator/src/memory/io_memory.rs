@@ -1,10 +1,6 @@
-use crate::{
-    io::IOBits,
-    memory::{
-        mutable,
-        traits::{FromBinaryStr, FromBinaryStrLines, ReadableMemory, WritableMemory},
-    },
-};
+use crate::memory::{
+        io::IOBits, mutable, traits::{FromBinaryStr, FromBinaryStrLines, ReadableMemory, WritableMemory},
+    };
 use std::{collections::VecDeque, io::Write, num::ParseIntError};
 use thiserror::Error;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
