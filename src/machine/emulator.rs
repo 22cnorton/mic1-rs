@@ -33,7 +33,9 @@ pub struct Machine {
     mbr: RegisterSize,
     mar: RegisterSize, // Retype since this can only be twelve bits
 
+    #[builder(setter)]
     read_micro_instructions: u8, // TODO: make ctor that returns machine with these values instead of carrying it arround
+    #[builder(setter)]
     read_machine_instructions: u16,
 }
 

@@ -16,9 +16,14 @@ mod registers;
 
 fn main() -> anyhow::Result<()> {
     let args = Mic1Args::parse();
+    let prom_data: Vec<_> = args.prom_data().collect();
+    let memory_data: Vec<_> = args.memory_data()?.collect();
+
     let mut machine = MachineBuilder::default()
-        .micro_code(ImmutableMemory::from_binary_str_lines(args.prom_data())?)
-        .memory(IOMemory::from_binary_str_lines(args.memory_data()?)?)
+        .read_micro_instructions(prom_data.len() as u8)
+        .read_machine_instructions(memory_data.len() as u16)
+        .micro_code(ImmutableMemory::from_binary_str_lines(prom_data)?)
+        .memory(IOMemory::from_binary_str_lines(memory_data)?)
         .registers(
             RegistersBuilder::default()
                 .sp(args.stack_pointer())
