@@ -2,15 +2,19 @@ use std::{any::Any, array, iter};
 
 use thiserror::Error;
 
-use crate::memory::traits::{FromBinaryStr, FromBinaryStrLines, ReadableMemory};
+use crate::memory::traits::{FromBinaryStr, FromBinaryStrLines, Memory, ReadableMemory};
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 #[repr(transparent)]
 pub struct ImmutableMemory<T, const S: usize>(Box<[T; S]>);
 
-impl<T, const S: usize> ReadableMemory<T> for ImmutableMemory<T, S> {
+impl<T, const S: usize> Memory for ImmutableMemory<T, S> {
+    type MemoryType = T;
+}
+
+impl<T, const S: usize> ReadableMemory for ImmutableMemory<T, S> {
     type MemoryError = ();
 
-    fn read(&mut self, index: usize) -> Result<&T, Self::MemoryError> {
+    fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         self.0.get(index).ok_or(())
     }
 }

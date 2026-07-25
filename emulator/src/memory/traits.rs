@@ -1,19 +1,23 @@
-pub trait ReadableMemory<MemoryType> {
-    type MemoryError;
-
-    fn read(&mut self, index: usize) -> Result<&MemoryType, Self::MemoryError>;
-}
-
-pub trait WritableMemory<MemoryType> {
-    type MemoryError;
-    
-    fn write(&mut self, index: usize, value: MemoryType) -> Result<(), Self::MemoryError>;
-}
-
-pub trait Memory<MemoryType>
+pub trait ReadableMemory
 where
-    Self: ReadableMemory<MemoryType> + WritableMemory<MemoryType>,
+    Self: Memory,
 {
+    type MemoryError;
+
+    fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError>;
+}
+
+pub trait WritableMemory
+where
+    Self: Memory,
+{
+    type MemoryError;
+
+    fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError>;
+}
+
+pub trait Memory {
+    type MemoryType;
 }
 
 pub trait FromBinaryStr: Sized {

@@ -1,5 +1,5 @@
 use crate::memory::{
-        io::IOBits, mutable, traits::{FromBinaryStr, FromBinaryStrLines, ReadableMemory, WritableMemory},
+        io::IOBits, mutable, traits::{FromBinaryStr, FromBinaryStrLines, Memory, ReadableMemory, WritableMemory},
     };
 use std::{collections::VecDeque, io::Write, num::ParseIntError};
 use thiserror::Error;
@@ -41,9 +41,13 @@ pub enum IOMemoryError {
     ConstructFromVec(Vec<MemoryType>),
 }
 
-impl WritableMemory<MemoryType> for IOMemory {
+impl Memory for IOMemory{
+    type MemoryType=MemoryType;
+}
+
+impl WritableMemory for IOMemory {
     type MemoryError = IOMemoryError;
-    fn write(&mut self, index: usize, value: MemoryType) -> Result<(), Self::MemoryError> {
+    fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
         match index {
             Self::RECEIVER_STATUS_ADDRESS => {
                 let bit_value = IOBits::from(value);
@@ -82,9 +86,9 @@ impl WritableMemory<MemoryType> for IOMemory {
         }
     }
 }
-impl ReadableMemory<MemoryType> for IOMemory {
+impl ReadableMemory for IOMemory {
     type MemoryError = IOMemoryError;
-    fn read(&mut self, index: usize) -> Result<&MemoryType, Self::MemoryError> {
+    fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         match index {
             Self::RECEIVER_ADDRESS => {
                 if self.receiver_status().can_read() {
