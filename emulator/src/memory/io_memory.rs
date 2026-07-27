@@ -1,6 +1,8 @@
 use crate::memory::{
-        io::IOBits, mutable, traits::{FromBinaryStr, FromBinaryStrLines, Memory, ReadableMemory, WritableMemory},
-    };
+    io::IOBits,
+    mutable,
+    traits::{FromBinaryStr, FromBinaryStrLines, Memory, ReadableMemory, WritableMemory},
+};
 use std::{collections::VecDeque, io::Write, num::ParseIntError};
 use thiserror::Error;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
@@ -8,13 +10,12 @@ pub struct IOMemory {
     memory: mutable::MutableMemory<u16, { Self::MEMORY_SIZE }>,
     input_buf: VecDeque<Option<u8>>,
 }
-type MemoryType = u16;
 
-impl FromBinaryStr for MemoryType {
+impl FromBinaryStr for <IOMemory as Memory>::MemoryType {
     type Error = ParseIntError;
 
     fn from_binary_str(s: &str) -> Result<Self, Self::Error> {
-        MemoryType::from_str_radix(s, 2)
+        <IOMemory as Memory>::MemoryType::from_str_radix(s, 2)
     }
 }
 
@@ -38,11 +39,11 @@ pub enum IOMemoryError {
     LineParse(#[from] ParseIntError),
 
     #[error("Failed to create IOMemory from {0:#04x?}")]
-    ConstructFromVec(Vec<MemoryType>),
+    ConstructFromVec(Vec<<IOMemory as Memory>::MemoryType>),
 }
 
-impl Memory for IOMemory{
-    type MemoryType=MemoryType;
+impl Memory for IOMemory {
+    type MemoryType = u16;
 }
 
 impl WritableMemory for IOMemory {
@@ -172,18 +173,18 @@ impl Default for IOMemory {
     }
 }
 
-impl TryFrom<Vec<MemoryType>> for IOMemory {
-    type Error = Vec<MemoryType>;
+impl TryFrom<Vec<<IOMemory as Memory>::MemoryType>> for IOMemory {
+    type Error = Vec<<IOMemory as Memory>::MemoryType>;
 
-    fn try_from(value: Vec<MemoryType>) -> Result<Self, Self::Error> {
+    fn try_from(value: Vec<<IOMemory as Memory>::MemoryType>) -> Result<Self, Self::Error> {
         Ok(Self {
             memory: value.try_into()?,
             input_buf: Default::default(),
         })
     }
 }
-impl From<[MemoryType; Self::MEMORY_SIZE]> for IOMemory {
-    fn from(value: [MemoryType; Self::MEMORY_SIZE]) -> Self {
+impl From<[<IOMemory as Memory>::MemoryType; Self::MEMORY_SIZE]> for IOMemory {
+    fn from(value: [<IOMemory as Memory>::MemoryType; Self::MEMORY_SIZE]) -> Self {
         Self {
             memory: value.into(),
             input_buf: Default::default(),
@@ -199,7 +200,7 @@ impl FromBinaryStrLines for IOMemory {
     ) -> Result<Self, Self::Error> {
         let mut vec = vec![Default::default(); Self::MEMORY_SIZE];
         for (i, line) in lines.into_iter().enumerate() {
-            vec[i] = MemoryType::from_binary_str(line.as_ref())?;
+            vec[i] = <IOMemory as Memory>::MemoryType::from_binary_str(line.as_ref())?;
         }
 
         Ok(vec
