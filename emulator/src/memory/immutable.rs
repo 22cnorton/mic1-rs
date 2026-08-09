@@ -1,8 +1,6 @@
-use std::{any::Any, array, iter};
-
-use thiserror::Error;
-
 use crate::memory::traits::{FromBinaryStr, FromBinaryStrLines, Memory, ReadableMemory};
+use std::{array, iter};
+use thiserror::Error;
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 #[repr(transparent)]
 pub struct ImmutableMemory<T, const S: usize>(Box<[T; S]>);

@@ -1,6 +1,5 @@
-use std::{array, fmt::Debug, iter};
-
 use crate::memory::traits::{self, FromBinaryStr, FromBinaryStrLines, Memory};
+use std::{array, fmt::Debug};
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 #[repr(transparent)]
 pub struct MutableMemory<T, const S: usize>(Box<[T; S]>);

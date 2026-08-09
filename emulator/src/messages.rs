@@ -1,16 +1,8 @@
-use crate::{
-    machine::{
-        microcode::MicroInstruction,
-        registers::{RegisterSize, Registers},
-    },
-    memory::immutable::ImmutableMemory,
+use crate::machine::{
+    microcode::MicroInstruction,
+    registers::{RegisterSize, Registers},
 };
-
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::Debug,
-    num::NonZeroUsize,
-};
+use std::{fmt::Debug, num::NonZeroUsize};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Line {

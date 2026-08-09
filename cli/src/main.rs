@@ -1,23 +1,18 @@
-use std::{
-    io::{self, Write, stdout},
-    iter,
-};
-
+use crate::cli::Mic1Args;
 use clap::Parser;
 use derive_more::Debug;
 use emulator::{
-    machine::{
-        MachineBuilder,
-        registers::{Registers, RegistersBuilder},
-    },
+    machine::{MachineBuilder, registers::RegistersBuilder},
     memory::{
         IOMemoryBuilder, immutable::ImmutableMemory, mutable::MutableMemory,
         traits::FromBinaryStrLines,
     },
-    messages::{Command, Event, Line},
+    messages::{Command, Event},
 };
-
-use crate::cli::Mic1Args;
+use std::{
+    io::{self, Write, stdout},
+    iter,
+};
 
 mod cli;
 
