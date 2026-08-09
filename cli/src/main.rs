@@ -9,10 +9,7 @@ use emulator::{
     },
     messages::{Command, Event},
 };
-use std::{
-    io::{self, Write, stdout},
-    iter,
-};
+use std::io::{self, Write, stdout};
 
 mod cli;
 
@@ -168,11 +165,8 @@ fn main() -> anyhow::Result<()> {
             EmulatorState::DisplayMicrocode => {
                 command_tx.send(Command::ViewMicrocode)?;
                 if let Event::Microcode(micro_code) = event_rx.recv()? {
-                    for (i, instruction) in iter::zip(
-                        iter::successors(Some(1), |i: &i32| Some(i.saturating_add(1))),
-                        micro_code.iter(),
-                    ) {
-                        println!("{i:>4}: {instruction:?}");
+                    for (i, instruction) in micro_code.iter().enumerate() {
+                        println!("{:>4}: {instruction:?}", i.saturating_add(1));
                     }
                 }
 
