@@ -147,14 +147,11 @@ impl Machine {
 
     fn halt(&mut self) -> Result<()> {
         self.blocking_io = true;
-        // eprintln!("Sending halt event");
-        // eprintln!("HALT STATE REACHED");
+
         if self.command_rx.is_empty() {
             self.event_tx.send(Event::Halted)?; // send event when halt state reached
         }
-        // Ok(self.command_rx.recv()?)
-        // wait for what to do next
-        // self.command_rx.
+
         loop {
             let event = match self.command_rx.recv()? {
                 Command::Line(_) => todo!(),

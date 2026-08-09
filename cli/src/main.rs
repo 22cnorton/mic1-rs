@@ -33,14 +33,6 @@ macro_rules! print_mem {
     }};
 }
 
-macro_rules! retry_menu {
-    ($command_tx:expr, $state:expr) => {
-        $state = Some(EmulatorState::WaitingMenu);
-        $command_tx.send(main_menu(&mut $state))?;
-        continue; // To skip state clear
-    };
-}
-
 fn main() -> anyhow::Result<()> {
     let (command_tx, command_rx) = flume::bounded(1);
     let (event_tx, event_rx) = flume::unbounded();
@@ -262,7 +254,6 @@ enum MenuOptions {
     Continue,
     ViewMicrocode,
     ViewMemory(usize),
-    // MemorySubmenu(MemorySubmenuOptions),
 }
 
 fn get_line() -> io::Result<String> {
