@@ -32,6 +32,21 @@ impl<T: Default, const S: usize> From<Vec<T>> for ImmutableMemory<T, S> {
     }
 }
 
+impl<T: Default, const S: usize> From<ImmutableMemory<T, S>> for Vec<T> {
+    fn from(value: ImmutableMemory<T, S>) -> Self {
+        (*value.0).into()
+    }
+}
+
+impl<T: Default, const S: usize> From<&ImmutableMemory<T, S>> for Vec<T>
+where
+    ImmutableMemory<T, S>: Clone,
+{
+    fn from(value: &ImmutableMemory<T, S>) -> Self {
+        value.clone().into()
+    }
+}
+
 impl<T, const S: usize> From<[T; S]> for ImmutableMemory<T, S> {
     fn from(value: [T; S]) -> Self {
         Self(value.into())

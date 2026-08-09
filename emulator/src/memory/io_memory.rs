@@ -1,14 +1,26 @@
-use crate::memory::{
-    io::IOBits,
-    mutable,
-    traits::{FromBinaryStr, FromBinaryStrLines, Memory, ReadableMemory, WritableMemory},
+use crate::{
+    memory::{
+        io::IOBits,
+        mutable,
+        traits::{FromBinaryStr, Memory, ReadableMemory, WritableMemory},
+    },
+    messages::{Command, Event, Line},
 };
-use std::{collections::VecDeque, io::Write, num::ParseIntError};
+use derive_builder::Builder;
+use flume::{Receiver, Sender};
+use std::collections::VecDeque;
+use std::num::ParseIntError;
 use thiserror::Error;
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
+
+const MEMORY_SIZE: usize = 0x1000;
+#[derive(Debug, Clone, Builder)]
 pub struct IOMemory {
-    memory: mutable::MutableMemory<u16, { Self::MEMORY_SIZE }>,
+    memory: mutable::MutableMemory<<IOMemory as Memory>::MemoryType, MEMORY_SIZE>,
+    #[builder(setter(skip))]
     input_buf: VecDeque<Option<u8>>,
+
+    command_rx: Receiver<Command>,
+    event_tx: Sender<Event<<IOMemory as Memory>::MemoryType>>,
 }
 
 impl FromBinaryStr for <IOMemory as Memory>::MemoryType {
@@ -20,7 +32,7 @@ impl FromBinaryStr for <IOMemory as Memory>::MemoryType {
 }
 
 impl IOMemory {
-    const MEMORY_SIZE: usize = 0x1000;
+    const MEMORY_SIZE: usize = MEMORY_SIZE;
     const TRANSMITTER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 1 };
     const TRANSMITTER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 2 };
     const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 3 };
@@ -62,9 +74,10 @@ impl WritableMemory for IOMemory {
             Self::TRANSMITTER_ADDRESS => {
                 if self.transmitter_status().can_write() {
                     self.set_transmitter(value);
-                    std::io::stdout()
-                        .write_all(&[((*self.transmitter()) & 0xFF) as u8])
-                        .unwrap();
+                    let event =
+                        Event::Write(Line::Bytes([(*self.transmitter() & 0xFF) as u8].to_vec()));
+                    self.event_tx.send(event).unwrap();
+
                     let status = self.transmitter_status().with_done(true).with_busy(false);
                     self.set_transmitter_status(status);
                 }
@@ -94,17 +107,10 @@ impl ReadableMemory for IOMemory {
             Self::RECEIVER_ADDRESS => {
                 if self.receiver_status().can_read() {
                     if self.input_buf.is_empty() {
-                        let mut buf = Default::default();
-
-                        match std::io::stdin().read_line(&mut buf) {
-                            Ok(s) if s > 0 => {
-                                self.input_buf.extend(buf.bytes().map(Some));
-                            }
-
-                            Err(_) | Ok(_) => {
-                                return Err(IOMemoryError::NoCharacters);
-                            }
-                        }
+                        match self.command_rx.recv() {
+                            Ok(Command::Line(str)) => self.input_buf.extend(str.bytes().map(Some)),
+                            _ => return Err(IOMemoryError::NoCharacters),
+                        };
                     }
                     if let Some(Some(byte)) = self.input_buf.pop_front() {
                         self.set_receiver(u16::from(byte));
@@ -162,49 +168,5 @@ impl IOMemory {
         self.memory
             .write(Self::RECEIVER_STATUS_ADDRESS, receiver_status.into())
             .unwrap();
-    }
-}
-impl Default for IOMemory {
-    fn default() -> Self {
-        Self {
-            memory: Default::default(),
-            input_buf: Default::default(),
-        }
-    }
-}
-
-impl TryFrom<Vec<<IOMemory as Memory>::MemoryType>> for IOMemory {
-    type Error = Vec<<IOMemory as Memory>::MemoryType>;
-
-    fn try_from(value: Vec<<IOMemory as Memory>::MemoryType>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            memory: value.try_into()?,
-            input_buf: Default::default(),
-        })
-    }
-}
-impl From<[<IOMemory as Memory>::MemoryType; Self::MEMORY_SIZE]> for IOMemory {
-    fn from(value: [<IOMemory as Memory>::MemoryType; Self::MEMORY_SIZE]) -> Self {
-        Self {
-            memory: value.into(),
-            input_buf: Default::default(),
-        }
-    }
-}
-
-impl FromBinaryStrLines for IOMemory {
-    type Error = IOMemoryError;
-
-    fn from_binary_str_lines<S: AsRef<str>>(
-        lines: impl IntoIterator<Item = S>,
-    ) -> Result<Self, Self::Error> {
-        let mut vec = vec![Default::default(); Self::MEMORY_SIZE];
-        for (i, line) in lines.into_iter().enumerate() {
-            vec[i] = <IOMemory as Memory>::MemoryType::from_binary_str(line.as_ref())?;
-        }
-
-        Ok(vec
-            .try_into()
-            .map_err(|e| IOMemoryError::ConstructFromVec(e))?)
     }
 }

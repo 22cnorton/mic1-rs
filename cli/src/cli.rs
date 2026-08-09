@@ -6,6 +6,7 @@ use std::{
 
 use clap::Parser;
 use either::Either;
+use emulator::machine::registers::RegisterSize;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -20,10 +21,10 @@ pub(crate) struct Mic1Args {
     program: PathBuf,
 
     #[arg(long, default_value_t = 0, help = "Initial program counter value")]
-    program_counter: u16,
+    program_counter: RegisterSize,
 
     #[arg(long, default_value_t = 0x0F80, help = "Initial stack pointer value")]
-    stack_pointer: u16,
+    stack_pointer: RegisterSize,
 }
 
 impl Mic1Args {
@@ -59,11 +60,11 @@ impl Mic1Args {
         &self.program
     }
 
-    pub(crate) fn program_counter(&self) -> u16 {
+    pub(crate) fn program_counter(&self) -> RegisterSize {
         self.program_counter
     }
 
-    pub(crate) fn stack_pointer(&self) -> u16 {
+    pub(crate) fn stack_pointer(&self) -> RegisterSize {
         self.stack_pointer
     }
 }

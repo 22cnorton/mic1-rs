@@ -1,4 +1,7 @@
-#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Default)]
+use getset::{Getters, Setters};
+
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Setters, Getters)]
+#[getset(set = "pub", get = "pub")]
 pub(super) struct Clock {
     tick: usize,
     subtick: Subtick,
@@ -7,24 +10,22 @@ pub(super) struct Clock {
 impl Clock {
     pub(super) fn pulse(&mut self) {
         self.subtick = self.subtick.next_tick();
-        if self.subtick == Subtick::Load {
+        if self.subtick.is_load() {
             self.tick += 1;
         }
     }
+}
 
-    pub(super) fn tick(&self) -> usize {
-        self.tick
-    }
-    pub(super) fn subtick(&self) -> Subtick {
-        self.subtick
-    }
-
-    pub(super) fn set_subtick(&mut self, value: Subtick) {
-        self.subtick = value;
+impl Default for Clock {
+    fn default() -> Self {
+        Self {
+            tick: 1,
+            subtick: Default::default(),
+        }
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Default, Clone, Copy, Hash)]
+#[derive(Eq, PartialEq, Debug, Default, Clone, Copy, Hash, derive_more::IsVariant)]
 pub(super) enum Subtick {
     #[default]
     Load,

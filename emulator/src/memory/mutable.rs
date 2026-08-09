@@ -1,6 +1,6 @@
-use std::fmt::Debug;
+use std::{array, fmt::Debug, iter};
 
-use crate::memory::traits::{self, Memory};
+use crate::memory::traits::{self, FromBinaryStr, FromBinaryStrLines, Memory};
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 #[repr(transparent)]
 pub struct MutableMemory<T, const S: usize>(Box<[T; S]>);
@@ -50,5 +50,25 @@ impl<T, const S: usize> traits::ReadableMemory for MutableMemory<T, S> {
 
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         self.0.get(index).ok_or(())
+    }
+}
+
+impl<T, const S: usize> FromBinaryStrLines for MutableMemory<T, S>
+where
+    <MutableMemory<T, S> as Memory>::MemoryType: FromBinaryStr,
+    T: Default,
+{
+    type Error = <<MutableMemory<T, S> as Memory>::MemoryType as FromBinaryStr>::Error;
+
+    fn from_binary_str_lines<R: AsRef<str>>(
+        lines: impl IntoIterator<Item = R>,
+    ) -> Result<Self, Self::Error> {
+        let mut arr = array::from_fn(|_| Default::default());
+
+        for (i, line) in lines.into_iter().take(S).enumerate() {
+            arr[i] = <MutableMemory<T, S> as Memory>::MemoryType::from_binary_str(line.as_ref())?;
+        }
+
+        Ok(Self(Box::new(arr)))
     }
 }

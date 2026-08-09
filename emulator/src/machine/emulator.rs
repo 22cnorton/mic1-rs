@@ -1,21 +1,27 @@
-use crate::machine::{
-    clock::{Clock, Subtick},
-    microcode::{self, MicroInstruction},
-    registers::{RegisterSize, Registers},
+use crate::{
+    machine::{
+        clock::{Clock, Subtick},
+        microcode::{self, MicroInstruction},
+        registers::{RegisterSize, Registers},
+    },
+    memory::traits::Memory,
+    messages::Command,
 };
-use crate::memory::{
-    IOMemory,
-    immutable::ImmutableMemory,
-    traits::{ReadableMemory, WritableMemory},
+use crate::{
+    memory::{
+        IOMemory,
+        immutable::ImmutableMemory,
+        traits::{ReadableMemory, WritableMemory},
+    },
+    messages::Event,
 };
 use anyhow::Result;
 use derive_builder::Builder;
+use flume::{Receiver, Sender};
 use std::fmt::Debug;
-use std::io::{self, Write};
-use std::iter;
 
 const MICROCODE_LENGTH: usize = 256;
-#[derive(Eq, PartialEq, Debug, Clone, Hash, Default, Builder)]
+#[derive(Debug, Builder)]
 #[builder(setter(skip))]
 pub struct Machine {
     #[builder(setter)]
@@ -37,9 +43,9 @@ pub struct Machine {
     mar: RegisterSize, // Retype since this can only be twelve bits
 
     #[builder(setter)]
-    read_micro_instructions: u8, // TODO: make ctor that returns machine with these values instead of carrying it arround
+    command_rx: Receiver<Command>,
     #[builder(setter)]
-    read_machine_instructions: u16,
+    event_tx: Sender<Event<<IOMemory as Memory>::MemoryType>>,
 }
 
 impl Machine {
@@ -141,142 +147,71 @@ impl Machine {
 
     fn halt(&mut self) -> Result<()> {
         self.blocking_io = true;
-
-        println!("{}", self.registers);
-        println!();
-        println!("{:<15}: {}", "Total Cycles", self.clock.tick());
-        println!();
-
-        macro_rules! quit {
-            () => {{
-                println!("MIC-1 emulator finishing, goodbye");
-                anyhow::bail!("Quitting MIC-1 emulator");
-            }};
+        // eprintln!("Sending halt event");
+        // eprintln!("HALT STATE REACHED");
+        if self.command_rx.is_empty() {
+            self.event_tx.send(Event::Halted)?; // send event when halt state reached
         }
-
-        macro_rules! get_range {
-            ($direction:literal) => {{
-                print!("Type the number of {} locations to dump: ", $direction);
-                io::stdout().flush().expect("Failed to flush stdout");
-                let mut input = String::new();
-                io::stdin()
-                    .read_line(&mut input)
-                    .expect("Failed to read input");
-                input.trim().parse::<usize>().ok()
-            }};
-        }
-
+        // Ok(self.command_rx.recv()?)
+        // wait for what to do next
+        // self.command_rx.
         loop {
-            print!("Type decimal address to view memory, q to quit or c to continue: ");
-            io::stdout().flush().expect("Failed to flush stdout");
-            let mut input = String::new();
+            let event = match self.command_rx.recv()? {
+                Command::Line(_) => todo!(),
+                Command::ViewMemory(items) => self.display_memory(items.into_iter()),
+                Command::ViewRegisters => {
+                    let reg = self.registers;
+                    Event::Registers(reg)
+                }
+                Command::Tick { count } => todo!(),
 
-            io::stdin()
-                .read_line(&mut input)
-                .expect("Failed to read input");
-
-            let input = input.trim();
-            match input.to_lowercase().as_str() {
-                "q" => quit!(),
-                "c" => {
+                Command::Quit => Event::Finished,
+                Command::Continue => {
                     self.blocking_io = false;
-                    self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
-                    break Ok(());
-                }
-                #[cfg(debug_assertions)]
-                "m" => {
-                    println!("Micro Code");
-                    println!("{:?}", self.micro_code)
-                }
-                _ => {
-                    if let Ok(addr) = input.parse() {
-                        if addr < self.memory.len() {
-                            self.display_memory(iter::once(addr));
-                            println!("Type  {:>7}  to continue debugging", "<Enter>");
-                            println!("Type  {:>7}  to quit", 'q');
-                            println!("Type  {:>7} for forward range", 'f');
-                            print!("Type  {:>7} for backward range: ", 'b');
-                            io::stdout().flush().expect("Failed to flush stdout");
-                            let mut input = String::new();
+                    self.micro_pc = 0;
 
-                            io::stdin()
-                                .read_line(&mut input)
-                                .expect("Failed to read input");
-                            let input = input.trim();
-                            match input {
-                                "q" => quit!(),
-                                "f" => match get_range!("forward") {
-                                    Some(end) => self.display_memory(addr + 1..=addr + end),
-                                    None => continue,
-                                },
-                                "b" => match get_range!("backward") {
-                                    Some(end) => self.display_memory((addr - end..addr).rev()),
-                                    None => continue,
-                                },
-                                _ => continue,
-                            }
-                        } else {
-                            println!(
-                                "BAD LOCATION VALUE, MUST BE BETWEEN 0 and {}",
-                                self.memory.len() - 1
-                            );
-                        }
-                    }
+                    self.clock.set_tick(self.clock.tick().saturating_add(1));
+                    self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
+
+                    self.registers.set_pc(self.registers.pc().saturating_add(1));
+                    self.event_tx.send(Event::Continue)?;
+
+                    break;
                 }
-            }
+                Command::ViewMicrocode => {
+                    let micro_code = &self.micro_code;
+                    Event::Microcode(micro_code.into())
+                }
+                Command::ViewCycles => Event::Cycles(*self.clock.tick()),
+            };
+            self.event_tx.send(event)?;
         }
+        Ok(())
     }
 
-    fn display_memory<I>(&mut self, indicies: I)
-    //TODO: refactor into Display trait on Memory
-    where
-        I: Iterator<Item = usize>,
-    {
+    fn display_memory(
+        &mut self,
+        indicies: impl Iterator<Item = usize>,
+    ) -> Event<<IOMemory as Memory>::MemoryType> {
+        let mut data = vec![];
         for addr in indicies {
-            if let Some(&reg) = self.memory.read(addr).ok() {
-                println!(
-                    "     the location {:4} has value {:016b} , or {1:5}  or signed {:6}",
-                    addr,
-                    u16::from(reg),
-                    u16::from(reg).cast_signed()
-                );
+            if let Ok(&reg) = self.memory.read(addr) {
+                data.push((addr, reg));
             }
         }
+
+        Event::Memory(data)
     }
 
     pub fn pulse(&mut self) -> Result<()> {
         match self.clock.subtick() {
-            Subtick::Load => {
-                if self.clock.tick() == 0 {
-                    println!(
-                        "Read in {} micro instructions",
-                        self.read_micro_instructions
-                    );
-                    println!(
-                        "Read in {} machine instructions",
-                        self.read_machine_instructions
-                    );
-                    println!(
-                        "{:<15}: {1:016b}  base 10: {1:7}",
-                        "Starting PC is",
-                        self.registers.pc()
-                    );
-                    println!(
-                        "{:<15}: {1:016b}  base 10: {1:7}",
-                        "Starting SP is",
-                        self.registers.sp()
-                    );
-                    println!();
-                };
-
-                self.load()
-            }
+            Subtick::Load => self.load(),
             Subtick::Gate => self.gate(),
             Subtick::Operation => self.calc(),
             Subtick::Store => self.store(),
         }
 
-        if self.clock.subtick() == Subtick::Load {
+        if self.clock.subtick().is_load() {
             match (self.mir.rd(), self.mir.wr()) {
                 (true, true) => {
                     self.halt()?;
@@ -298,6 +233,35 @@ impl Machine {
         }
 
         self.clock.pulse();
+
+        // if command.is_none() {
+        //     command = self.command_rx.try_recv().ok();
+        // }
+
+        // match self.command_rx.try_recv() {//TODO: handle messages to veiw state while running
+        //     Ok(Command::ViewRegisters) => {
+        //         self.event_tx.send(Event::Registers(self.registers))?;
+        //     }
+        //     _ => {}
+        // }
+
+        // if let Some(command) = command {
+        //     self.event_tx.send(match command {
+        //         Command::Line(_) => todo!(),
+        //         Command::ViewMemory(items) => todo!(),
+        //         Command::ViewRegisters => todo!(),
+        //         Command::ViewMicrocode => todo!(),
+        //         Command::Tick { count } => todo!(),
+
+        //         Command::Quit => Event::Finished,
+        //         Command::Continue => {
+        //             self.blocking_io = false;
+        //             self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
+        //             Event::Continue
+        //         }
+        //     })?;
+        // }
+
         Ok(())
     }
 }
