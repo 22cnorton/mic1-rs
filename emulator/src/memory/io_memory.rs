@@ -1,10 +1,7 @@
-use crate::{
-    memory::{
-        io::IOBits,
-        mutable,
-        traits::{FromBinaryStr, Memory, ReadableMemory, WritableMemory},
-    },
-    messages::{Command, Event, Line},
+use crate::memory::{
+    io::IOBits,
+    mutable,
+    traits::{FromBinaryStr, Memory, ReadableMemory, WritableMemory},
 };
 use derive_builder::Builder;
 use flume::{Receiver, Sender};
@@ -19,8 +16,8 @@ pub struct IOMemory {
     #[builder(setter(skip))]
     input_buf: VecDeque<Option<u8>>,
 
-    command_rx: Receiver<Command>,
-    event_tx: Sender<Event<<IOMemory as Memory>::MemoryType>>,
+    stdin_rx: Receiver<Vec<u8>>,
+    stdout_tx: Sender<Vec<u8>>,
 }
 
 impl FromBinaryStr for <IOMemory as Memory>::MemoryType {
@@ -52,6 +49,9 @@ pub enum IOMemoryError {
 
     #[error("Failed to create IOMemory from {0:#04x?}")]
     ConstructFromVec(Vec<<IOMemory as Memory>::MemoryType>),
+
+    #[error("Write Failed")]
+    WriteFail,
 }
 
 impl Memory for IOMemory {
@@ -74,9 +74,11 @@ impl WritableMemory for IOMemory {
             Self::TRANSMITTER_ADDRESS => {
                 if self.transmitter_status().can_write() {
                     self.set_transmitter(value);
-                    let event =
-                        Event::Write(Line::Bytes([(*self.transmitter() & 0xFF) as u8].to_vec()));
-                    self.event_tx.send(event).unwrap();
+                    let text = [(*self.transmitter() & 0xFF) as u8].to_vec();
+                    // self.event_tx.send(event).unwrap();
+                    self.stdout_tx
+                        .send(text)
+                        .map_err(|_| IOMemoryError::WriteFail)?;
 
                     let status = self.transmitter_status().with_done(true).with_busy(false);
                     self.set_transmitter_status(status);
@@ -107,8 +109,9 @@ impl ReadableMemory for IOMemory {
             Self::RECEIVER_ADDRESS => {
                 if self.receiver_status().can_read() {
                     if self.input_buf.is_empty() {
-                        match self.command_rx.recv() {
-                            Ok(Command::Line(str)) => self.input_buf.extend(str.bytes().map(Some)),
+                        // eprintln!("Trying to read");
+                        match self.stdin_rx.recv() {
+                            Ok(s) => self.input_buf.extend(s.into_iter().map(Some)),
                             _ => return Err(IOMemoryError::NoCharacters),
                         };
                     }

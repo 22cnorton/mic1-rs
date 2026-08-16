@@ -15,7 +15,7 @@ use crate::{
     },
     messages::Event,
 };
-use anyhow::Result;
+use anyhow::{Result, bail};
 use derive_builder::Builder;
 use flume::{Receiver, Sender};
 use std::fmt::Debug;
@@ -160,9 +160,12 @@ impl Machine {
                     let reg = self.registers;
                     Event::Registers(reg)
                 }
-                Command::Tick { count } => todo!(),
+                Command::Tick { count: _ } => todo!(),
 
-                Command::Quit => Event::Finished,
+                Command::Quit => {
+                    self.event_tx.send(Event::Finished)?;
+                    bail!("Quiting") // TODO: clean up, either by fxn return value, or internal tracker, or custom error
+                }
                 Command::Continue => {
                     self.blocking_io = false;
                     self.micro_pc = 0;

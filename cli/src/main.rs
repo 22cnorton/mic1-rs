@@ -9,7 +9,8 @@ use emulator::{
     },
     messages::{Command, Event},
 };
-use std::io::{self, Write, stdout};
+use flume::Receiver;
+use std::io::{self, Write, stdin, stdout};
 
 mod cli;
 
@@ -33,8 +34,8 @@ macro_rules! print_mem {
 fn main() -> anyhow::Result<()> {
     let (command_tx, command_rx) = flume::bounded(1);
     let (event_tx, event_rx) = flume::unbounded();
-    let (input_tx, input_rx) = flume::unbounded::<String>(); // TODO: channel to send input to the emulator thread
-    let (output_tx, output_rx) = flume::unbounded::<String>(); // TODO: channel to send output from the emulator thread
+    let (input_tx, input_rx) = flume::unbounded(); // TODO: channel to send input to the emulator thread
+    let (output_tx, output_rx) = flume::unbounded(); // TODO: channel to send output from the emulator thread
 
     let args = Mic1Args::parse();
 
@@ -48,8 +49,8 @@ fn main() -> anyhow::Result<()> {
         .memory(
             IOMemoryBuilder::default()
                 .memory(MutableMemory::from_binary_str_lines(memory_data)?)
-                .event_tx(event_tx.clone())
-                .command_rx(command_rx.clone())
+                .stdin_rx(input_rx.clone())
+                .stdout_tx(output_tx.clone())
                 .build()?,
         )
         .event_tx(event_tx.clone())
@@ -62,23 +63,41 @@ fn main() -> anyhow::Result<()> {
         )
         .build()?;
 
-    std::thread::spawn(move || -> anyhow::Result<()> {
-        event_tx.send(emulator::messages::Event::DoneInit {
-            sp: args.stack_pointer(),
-            pc: args.program_counter(),
-            read_micro_instructions,
-            read_machine_instructions,
-        })?;
+    std::thread::spawn(move || {
+        event_tx
+            .send(emulator::messages::Event::DoneInit {
+                sp: args.stack_pointer(),
+                pc: args.program_counter(),
+                read_micro_instructions,
+                read_machine_instructions,
+            })
+            .unwrap();
 
         loop {
-            machine.pulse()?;
+            if matches!(machine.pulse(), Err(_)) {
+                return;
+            }
+        }
+    });
+
+    std::thread::spawn(move || {
+        for line in stdin().lines() {
+            if let Ok(line) = line {
+                let mut bytes = line.into_bytes();
+                bytes.push(b'\n');
+
+                if matches!(input_tx.send(bytes), Err(_)) {
+                    return;
+                }
+            }
         }
     });
 
     let mut state = EmulatorState::Init;
+    let input_buffer = input_rx.clone();
+
     while !event_rx.is_disconnected() {
         // while let Ok(event) = event_rx.recv() {
-        //TODO: what we should do is do the menu, then send a command and act on the result. The menu can only be shown after the first halt event, so use a variable to keep track of if we have halted or not, reset when continuing
 
         state = match state {
             EmulatorState::Init => {
@@ -99,10 +118,20 @@ fn main() -> anyhow::Result<()> {
                 EmulatorState::Processing
             }
 
-            EmulatorState::Processing => match event_rx.recv()? {
-                Event::Halted => EmulatorState::Stats,
-                _ => EmulatorState::Processing,
-            },
+            EmulatorState::Processing => flume::Selector::new()
+                .recv(&event_rx, |event| match event {
+                    Ok(Event::Halted) => EmulatorState::Stats,
+                    _ => EmulatorState::Processing,
+                })
+                .recv(&output_rx, |output| {
+                    if let Ok(line) = output {
+                        _ = stdout().write(&line);
+
+                        stdout().flush().unwrap();
+                    }
+                    EmulatorState::Processing
+                })
+                .wait(),
             EmulatorState::ShowPC => {
                 command_tx.send(Command::ViewRegisters)?;
                 if let Event::Registers(registers) = event_rx.recv()? {
@@ -124,7 +153,7 @@ fn main() -> anyhow::Result<()> {
 
                 EmulatorState::Menu
             }
-            EmulatorState::Menu => match main_menu() {
+            EmulatorState::Menu => match main_menu(&input_buffer) {
                 MenuOptions::Quit => EmulatorState::Quit,
                 MenuOptions::Continue => EmulatorState::ShowPC,
                 MenuOptions::ViewMicrocode => EmulatorState::DisplayMicrocode,
@@ -142,7 +171,7 @@ fn main() -> anyhow::Result<()> {
                     Default::default()
                 };
 
-                match memory_submenu(index) {
+                match memory_submenu(index, &input_buffer) {
                     Some(
                         MemorySubmenuOptions::Forward { indices }
                         | MemorySubmenuOptions::Backward { indices },
@@ -183,10 +212,10 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main_menu() -> MenuOptions {
+fn main_menu(input_buffer: &Receiver<Vec<u8>>) -> MenuOptions {
     print!("Type decimal address to view memory, q to quit or c to continue: ");
     io::stdout().flush().expect("Failed to flush stdout");
-    let line = get_line().unwrap_or_default();
+    let line = get_line(input_buffer).unwrap_or_default();
 
     match line.to_lowercase().as_str() {
         "q" => MenuOptions::Quit,
@@ -200,12 +229,18 @@ fn main_menu() -> MenuOptions {
         }
     }
 }
-fn memory_submenu(starting_index: usize) -> Option<MemorySubmenuOptions> {
-    fn get_memory_steps(direction: &str) -> Option<usize> {
+fn memory_submenu(
+    starting_index: usize,
+    input_buffer: &Receiver<Vec<u8>>,
+) -> Option<MemorySubmenuOptions> {
+    fn get_memory_steps(direction: &str, input_buffer: &Receiver<Vec<u8>>) -> Option<usize> {
         print!("Type the number of {} locations to dump: ", direction);
         stdout().flush().expect("Failed to flush stdout");
-        let input = get_line().unwrap_or_default();
-        input.trim().parse().ok()
+        get_line(input_buffer)
+            .unwrap_or_default()
+            .trim()
+            .parse()
+            .ok()
     }
 
     println!("Type  {:>7}  to continue debugging", "<Enter>");
@@ -214,17 +249,17 @@ fn memory_submenu(starting_index: usize) -> Option<MemorySubmenuOptions> {
     print!("Type  {:>7} for backward range: ", 'b');
     std::io::stdout().flush().expect("Failed to flush stdout");
 
-    let line = get_line().unwrap_or_default().to_lowercase();
+    let line = get_line(input_buffer).unwrap_or_default().to_lowercase();
     match line.as_str() {
         "" => Some(MemorySubmenuOptions::Continue),
         "q" => Some(MemorySubmenuOptions::Quit),
         "f" => {
-            let steps = get_memory_steps("forward")?;
-            let indices = (starting_index + 1..=starting_index + steps).collect();
+            let steps = get_memory_steps("forward", input_buffer)?;
+            let indices = (starting_index.saturating_add(1)..=starting_index + steps).collect();
             Some(MemorySubmenuOptions::Forward { indices })
         }
         "b" => {
-            let steps = get_memory_steps("backward")?;
+            let steps = get_memory_steps("backward", input_buffer)?;
             let indices = (starting_index.saturating_sub(steps)..starting_index)
                 .rev()
                 .collect();
@@ -250,13 +285,11 @@ enum MenuOptions {
     ViewMemory(usize),
 }
 
-fn get_line() -> io::Result<String> {
-    let mut input = Default::default();
-
-    match io::stdin().read_line(&mut input) {
-        Ok(_) => Ok(input.trim().to_string()),
-        Err(e) => Err(e),
-    }
+fn get_line(input_buffer: &Receiver<Vec<u8>>) -> Option<String> {
+    input_buffer
+        .recv()
+        .ok()
+        .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
 }
 
 #[derive(Debug, Clone, Copy)]
