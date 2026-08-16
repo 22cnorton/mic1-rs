@@ -1,16 +1,18 @@
-use std::{any::Any, array, iter};
-
+use crate::memory::traits::{FromBinaryStr, FromBinaryStrLines, Memory, ReadableMemory};
+use std::{array, iter};
 use thiserror::Error;
-
-use crate::memory::traits::{FromBinaryStr, FromBinaryStrLines, ReadableMemory};
 #[derive(Eq, PartialEq, Debug, Clone, Hash)]
 #[repr(transparent)]
 pub struct ImmutableMemory<T, const S: usize>(Box<[T; S]>);
 
-impl<T, const S: usize> ReadableMemory<T> for ImmutableMemory<T, S> {
+impl<T, const S: usize> Memory for ImmutableMemory<T, S> {
+    type MemoryType = T;
+}
+
+impl<T, const S: usize> ReadableMemory for ImmutableMemory<T, S> {
     type MemoryError = ();
 
-    fn read(&mut self, index: usize) -> Result<&T, Self::MemoryError> {
+    fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         self.0.get(index).ok_or(())
     }
 }
@@ -25,6 +27,21 @@ impl<T: Default, const S: usize> From<Vec<T>> for ImmutableMemory<T, S> {
                 .try_into()
                 .unwrap_unchecked()
         })
+    }
+}
+
+impl<T: Default, const S: usize> From<ImmutableMemory<T, S>> for Vec<T> {
+    fn from(value: ImmutableMemory<T, S>) -> Self {
+        (*value.0).into()
+    }
+}
+
+impl<T: Default, const S: usize> From<&ImmutableMemory<T, S>> for Vec<T>
+where
+    ImmutableMemory<T, S>: Clone,
+{
+    fn from(value: &ImmutableMemory<T, S>) -> Self {
+        value.clone().into()
     }
 }
 

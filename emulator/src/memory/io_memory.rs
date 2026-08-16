@@ -1,29 +1,35 @@
-use crate::{
+use crate::memory::{
     io::IOBits,
-    memory::{
-        mutable,
-        traits::{FromBinaryStr, FromBinaryStrLines, ReadableMemory, WritableMemory},
-    },
+    mutable,
+    traits::{FromBinaryStr, Memory, ReadableMemory, WritableMemory},
 };
-use std::{collections::VecDeque, io::Write, num::ParseIntError};
+use derive_builder::Builder;
+use flume::{Receiver, Sender};
+use std::collections::VecDeque;
+use std::num::ParseIntError;
 use thiserror::Error;
-#[derive(Eq, PartialEq, Debug, Clone, Hash)]
-pub struct IOMemory {
-    memory: mutable::MutableMemory<u16, { Self::MEMORY_SIZE }>,
-    input_buf: VecDeque<Option<u8>>,
-}
-type MemoryType = u16;
 
-impl FromBinaryStr for MemoryType {
+const MEMORY_SIZE: usize = 0x1000;
+#[derive(Debug, Clone, Builder)]
+pub struct IOMemory {
+    memory: mutable::MutableMemory<<IOMemory as Memory>::MemoryType, MEMORY_SIZE>,
+    #[builder(setter(skip))]
+    input_buf: VecDeque<Option<u8>>,
+
+    stdin_rx: Receiver<Vec<u8>>,
+    stdout_tx: Sender<Vec<u8>>,
+}
+
+impl FromBinaryStr for <IOMemory as Memory>::MemoryType {
     type Error = ParseIntError;
 
     fn from_binary_str(s: &str) -> Result<Self, Self::Error> {
-        MemoryType::from_str_radix(s, 2)
+        <IOMemory as Memory>::MemoryType::from_str_radix(s, 2)
     }
 }
 
 impl IOMemory {
-    const MEMORY_SIZE: usize = 0x1000;
+    const MEMORY_SIZE: usize = MEMORY_SIZE;
     const TRANSMITTER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 1 };
     const TRANSMITTER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 2 };
     const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 3 };
@@ -42,12 +48,19 @@ pub enum IOMemoryError {
     LineParse(#[from] ParseIntError),
 
     #[error("Failed to create IOMemory from {0:#04x?}")]
-    ConstructFromVec(Vec<MemoryType>),
+    ConstructFromVec(Vec<<IOMemory as Memory>::MemoryType>),
+
+    #[error("Write Failed")]
+    WriteFail,
 }
 
-impl WritableMemory<MemoryType> for IOMemory {
+impl Memory for IOMemory {
+    type MemoryType = u16;
+}
+
+impl WritableMemory for IOMemory {
     type MemoryError = IOMemoryError;
-    fn write(&mut self, index: usize, value: MemoryType) -> Result<(), Self::MemoryError> {
+    fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
         match index {
             Self::RECEIVER_STATUS_ADDRESS => {
                 let bit_value = IOBits::from(value);
@@ -61,9 +74,12 @@ impl WritableMemory<MemoryType> for IOMemory {
             Self::TRANSMITTER_ADDRESS => {
                 if self.transmitter_status().can_write() {
                     self.set_transmitter(value);
-                    std::io::stdout()
-                        .write_all(&[((*self.transmitter()) & 0xFF) as u8])
-                        .unwrap();
+                    let text = [(*self.transmitter() & 0xFF) as u8].to_vec();
+                    // self.event_tx.send(event).unwrap();
+                    self.stdout_tx
+                        .send(text)
+                        .map_err(|_| IOMemoryError::WriteFail)?;
+
                     let status = self.transmitter_status().with_done(true).with_busy(false);
                     self.set_transmitter_status(status);
                 }
@@ -86,24 +102,18 @@ impl WritableMemory<MemoryType> for IOMemory {
         }
     }
 }
-impl ReadableMemory<MemoryType> for IOMemory {
+impl ReadableMemory for IOMemory {
     type MemoryError = IOMemoryError;
-    fn read(&mut self, index: usize) -> Result<&MemoryType, Self::MemoryError> {
+    fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         match index {
             Self::RECEIVER_ADDRESS => {
                 if self.receiver_status().can_read() {
                     if self.input_buf.is_empty() {
-                        let mut buf = Default::default();
-
-                        match std::io::stdin().read_line(&mut buf) {
-                            Ok(s) if s > 0 => {
-                                self.input_buf.extend(buf.bytes().map(Some));
-                            }
-
-                            Err(_) | Ok(_) => {
-                                return Err(IOMemoryError::NoCharacters);
-                            }
-                        }
+                        // eprintln!("Trying to read");
+                        match self.stdin_rx.recv() {
+                            Ok(s) => self.input_buf.extend(s.into_iter().map(Some)),
+                            _ => return Err(IOMemoryError::NoCharacters),
+                        };
                     }
                     if let Some(Some(byte)) = self.input_buf.pop_front() {
                         self.set_receiver(u16::from(byte));
@@ -161,49 +171,5 @@ impl IOMemory {
         self.memory
             .write(Self::RECEIVER_STATUS_ADDRESS, receiver_status.into())
             .unwrap();
-    }
-}
-impl Default for IOMemory {
-    fn default() -> Self {
-        Self {
-            memory: Default::default(),
-            input_buf: Default::default(),
-        }
-    }
-}
-
-impl TryFrom<Vec<MemoryType>> for IOMemory {
-    type Error = Vec<MemoryType>;
-
-    fn try_from(value: Vec<MemoryType>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            memory: value.try_into()?,
-            input_buf: Default::default(),
-        })
-    }
-}
-impl From<[MemoryType; Self::MEMORY_SIZE]> for IOMemory {
-    fn from(value: [MemoryType; Self::MEMORY_SIZE]) -> Self {
-        Self {
-            memory: value.into(),
-            input_buf: Default::default(),
-        }
-    }
-}
-
-impl FromBinaryStrLines for IOMemory {
-    type Error = IOMemoryError;
-
-    fn from_binary_str_lines<S: AsRef<str>>(
-        lines: impl IntoIterator<Item = S>,
-    ) -> Result<Self, Self::Error> {
-        let mut vec = vec![Default::default(); Self::MEMORY_SIZE];
-        for (i, line) in lines.into_iter().enumerate() {
-            vec[i] = MemoryType::from_binary_str(line.as_ref())?;
-        }
-
-        Ok(vec
-            .try_into()
-            .map_err(|e| IOMemoryError::ConstructFromVec(e))?)
     }
 }
