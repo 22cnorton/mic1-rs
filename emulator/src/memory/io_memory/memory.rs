@@ -1,23 +1,30 @@
 use crate::memory::{
     io::IOBits,
+    io_memory::access::{LineGetter, LineSender},
     mutable,
     traits::{FromBinaryStr, Memory, ReadableMemory, WritableMemory},
 };
 use derive_builder::Builder;
+use derive_more::Debug;
 use flume::{Receiver, Sender};
-use std::collections::VecDeque;
 use std::num::ParseIntError;
+use std::{collections::VecDeque, rc::Rc};
 use thiserror::Error;
 
 const MEMORY_SIZE: usize = 0x1000;
 #[derive(Debug, Clone, Builder)]
+// #[builder(pattern = "owned")]
 pub struct IOMemory {
     memory: mutable::MutableMemory<<IOMemory as Memory>::MemoryType, MEMORY_SIZE>,
     #[builder(setter(skip))]
     input_buf: VecDeque<Option<u8>>,
 
-    stdin_rx: Receiver<Vec<u8>>,
-    stdout_tx: Sender<Vec<u8>>,
+    #[debug(skip)]
+    // #[builder(into)]
+    line_getter: Rc<dyn LineGetter<String>>,
+    #[debug(skip)]
+    // #[builder(into)]
+    line_sender: Rc<dyn LineSender<String>>,
 }
 
 impl FromBinaryStr for <IOMemory as Memory>::MemoryType {
@@ -76,9 +83,10 @@ impl WritableMemory for IOMemory {
                     self.set_transmitter(value);
                     let text = [(*self.transmitter() & 0xFF) as u8].to_vec();
                     // self.event_tx.send(event).unwrap();
-                    self.stdout_tx
-                        .send(text)
-                        .map_err(|_| IOMemoryError::WriteFail)?;
+                    self.line_sender
+                        .send_line(&String::from_utf8(text).map_err(|_| IOMemoryError::WriteFail)?);
+                    // .send(text)
+                    // .map_err(|_| IOMemoryError::WriteFail)?;
 
                     let status = self.transmitter_status().with_done(true).with_busy(false);
                     self.set_transmitter_status(status);
@@ -110,10 +118,8 @@ impl ReadableMemory for IOMemory {
                 if self.receiver_status().can_read() {
                     if self.input_buf.is_empty() {
                         // eprintln!("Trying to read");
-                        match self.stdin_rx.recv() {
-                            Ok(s) => self.input_buf.extend(s.into_iter().map(Some)),
-                            _ => return Err(IOMemoryError::NoCharacters),
-                        };
+                        self.input_buf
+                            .extend(self.line_getter.get_line().bytes().into_iter().map(Some));
                     }
                     if let Some(Some(byte)) = self.input_buf.pop_front() {
                         self.set_receiver(u16::from(byte));
