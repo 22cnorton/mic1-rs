@@ -1,10 +1,10 @@
 use crate::cli::Mic1Args;
 use clap::Parser;
-use derive_more::Debug;
+
 use emulator::{
     machine::{MachineBuilder, registers::RegistersBuilder},
     memory::{
-        IOMemoryBuilder, immutable::ImmutableMemory, mutable::MutableMemory,
+        immutable::ImmutableMemory, io_memory::IOMemoryBuilder, mutable::MutableMemory,
         traits::FromBinaryStrLines,
     },
     messages::{Command, Event},
@@ -13,6 +13,7 @@ use flume::Receiver;
 use std::io::{self, Write, stdin, stdout};
 
 mod cli;
+mod io_access;
 
 macro_rules! print_mem {
     ($addr:expr, $value:expr) => {{
@@ -37,45 +38,53 @@ fn main() -> anyhow::Result<()> {
     let (input_tx, input_rx) = flume::unbounded(); // TODO: channel to send input to the emulator thread
     let (output_tx, output_rx) = flume::unbounded(); // TODO: channel to send output from the emulator thread
 
-    let args = Mic1Args::parse();
-
-    let prom_data: Vec<_> = args.prom_data().collect();
-    let memory_data: Vec<_> = args.memory_data()?.collect();
-    let read_micro_instructions = prom_data.len();
-    let read_machine_instructions = memory_data.len();
-
-    let mut machine = MachineBuilder::default()
-        .micro_code(ImmutableMemory::from_binary_str_lines(prom_data)?)
-        .memory(
-            IOMemoryBuilder::default()
-                .memory(MutableMemory::from_binary_str_lines(memory_data)?)
-                .stdin_rx(input_rx.clone())
-                .stdout_tx(output_tx.clone())
-                .build()?,
-        )
-        .event_tx(event_tx.clone())
-        .command_rx(command_rx.clone())
-        .registers(
-            RegistersBuilder::default()
-                .sp(args.stack_pointer())
-                .pc(args.program_counter())
-                .build()?,
-        )
-        .build()?;
-
-    std::thread::spawn(move || {
-        event_tx
-            .send(emulator::messages::Event::DoneInit {
-                sp: args.stack_pointer(),
-                pc: args.program_counter(),
-                read_micro_instructions,
-                read_machine_instructions,
-            })
-            .unwrap();
+    std::thread::spawn(move || -> anyhow::Result<()> {
+        let args = Mic1Args::parse();
+        let prom_data: Vec<_> = args.prom_data().collect();
+        let memory_data: Vec<_> = args.memory_data()?.collect();
+        let read_micro_instructions = prom_data.len();
+        let read_machine_instructions = memory_data.len();
+        let mut emulator =
+            MachineBuilder::default() //TODO: rewrite to use if let and emit failed to init on failure
+                .micro_code(ImmutableMemory::from_binary_str_lines(prom_data)?)
+                .memory(
+                    IOMemoryBuilder::default()
+                        .memory(MutableMemory::from_binary_str_lines(memory_data)?)
+                        // .stdin_rx(input_rx.clone())
+                        // .stdout_tx(output_tx.clone())
+                        .build()?,
+                )
+                .registers(
+                    RegistersBuilder::default()
+                        .sp(args.stack_pointer())
+                        .pc(args.program_counter())
+                        .build()?,
+                )
+                .build()?;
+        event_tx.send(emulator::messages::Event::DoneInit {
+            sp: args.stack_pointer(),
+            pc: args.program_counter(),
+            read_micro_instructions,
+            read_machine_instructions,
+        })?;
 
         loop {
-            if matches!(machine.pulse(), Err(_)) {
-                return;
+            emulator.pulse()?; // pulse machine
+            // manage commands
+            while let Ok(command) = command_rx.try_recv() {
+                event_tx.send(match command {
+                    Command::Line(_) => todo!(),
+                    Command::ViewMemory(indicies) => Event::Memory(emulator.get_memory(indicies)),
+                    Command::ViewRegisters => Event::Registers(*emulator.registers()),
+                    Command::ViewMicrocode => Event::Microcode(emulator.microcode()),
+                    Command::Tick { count: _ } => todo!(),
+                    Command::Quit => return Ok(()),
+                    Command::Continue => {
+                        emulator.r#continue();
+                        break;
+                    }
+                    Command::ViewCycles => Event::Cycles(*emulator.clock().tick()),
+                })?;
             }
         }
     });
@@ -125,7 +134,7 @@ fn main() -> anyhow::Result<()> {
                 })
                 .recv(&output_rx, |output| {
                     if let Ok(line) = output {
-                        _ = stdout().write(&line);
+                        _ = stdout().write(line);
 
                         stdout().flush().unwrap();
                     }
@@ -204,7 +213,7 @@ fn main() -> anyhow::Result<()> {
             EmulatorState::Quit => {
                 command_tx.send(Command::Quit)?;
                 println!("MIC-1 emulator finishing, goodbye");
-                return Ok(());
+                break;
             }
         }
     }
