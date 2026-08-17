@@ -2,7 +2,7 @@ use getset::{Getters, Setters};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash, Setters, Getters)]
 #[getset(set = "pub", get = "pub")]
-pub(super) struct Clock {
+pub struct Clock {
     tick: usize,
     subtick: Subtick,
 }
@@ -26,7 +26,7 @@ impl Default for Clock {
 }
 
 #[derive(Eq, PartialEq, Debug, Default, Clone, Copy, Hash, derive_more::IsVariant)]
-pub(super) enum Subtick {
+pub enum Subtick {
     #[default]
     Load,
     Gate,

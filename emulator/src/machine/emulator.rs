@@ -18,10 +18,11 @@ use crate::{
 use anyhow::{Result, bail};
 use derive_builder::Builder;
 use flume::{Receiver, Sender};
+use getset::Getters;
 use std::fmt::Debug;
 
 const MICROCODE_LENGTH: usize = 256;
-#[derive(Debug, Builder)]
+#[derive(Debug, Clone, Builder)]
 #[builder(setter(skip))]
 pub struct Machine {
     #[builder(setter)]
@@ -41,11 +42,6 @@ pub struct Machine {
     c_bus: RegisterSize,
     mbr: RegisterSize,
     mar: RegisterSize, // Retype since this can only be twelve bits
-
-                       // #[builder(setter)]
-                       // command_rx: Receiver<Command>,
-                       // #[builder(setter)]
-                       // event_tx: Sender<Event<<IOMemory as Memory>::MemoryType>>,
 }
 
 pub enum MachineState {
@@ -53,19 +49,47 @@ pub enum MachineState {
     Running,
 }
 
+#[allow(dead_code)]
 impl Machine {
-    #[allow(dead_code)]
     pub fn current_instruction(&mut self) -> u16 {
         *self
             .memory
             .read(*self.registers.pc() as usize)
             .expect("Never read out of bounds")
     }
-    #[allow(dead_code)]
+
     pub fn current_micro_instruction(&self) -> MicroInstruction {
         self.mir
     }
 
+    pub fn clock(&self) -> &Clock {
+        &self.clock
+    }
+
+    pub fn microcode(&self) -> Vec<MicroInstruction> {
+        (&self.micro_code).into()
+    }
+
+    pub fn registers(&self) -> &Registers {
+        &self.registers
+    }
+
+    pub fn get_memory(
+        &mut self,
+        indicies: impl IntoIterator<Item = usize>,
+    ) -> Vec<(usize, <IOMemory as Memory>::MemoryType)> {
+        let mut data = vec![];
+        for addr in indicies {
+            if let Ok(&reg) = self.memory.read(addr) {
+                data.push((addr, reg));
+            }
+        }
+
+        data
+    }
+}
+
+impl Machine {
     fn instruction_at(&mut self, addr: u8) -> MicroInstruction {
         *self
             .micro_code
@@ -78,8 +102,8 @@ impl Machine {
     }
 
     fn gate(&mut self) {
-        self.a_bus = *self.registers.read_from_reg(self.mir.a() as usize);
-        self.b_bus = *self.registers.read_from_reg(self.mir.b() as usize);
+        self.a_bus = *self.registers.read(self.mir.a() as usize).unwrap();
+        self.b_bus = *self.registers.read(self.mir.b() as usize).unwrap();
     }
 
     fn calc(&mut self) {
@@ -142,8 +166,7 @@ impl Machine {
 
     fn store(&mut self) {
         if self.mir.enc() {
-            self.registers
-                .write_to_reg(self.mir.c() as usize, self.c_bus);
+            self.registers.write(self.mir.c() as usize, self.c_bus);
         }
         if self.mir.mbr() {
             self.mbr = self.c_bus;
@@ -151,6 +174,10 @@ impl Machine {
     }
 
     fn halt(&mut self) {
+        self.blocking_io = true;
+    }
+
+    pub fn r#continue(&mut self) {
         self.blocking_io = false;
         self.micro_pc = 0;
 
@@ -158,34 +185,6 @@ impl Machine {
         self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
 
         self.registers.set_pc(self.registers.pc().saturating_add(1));
-    }
-
-    fn display_memory(
-        &mut self,
-        indicies: impl Iterator<Item = usize>,
-    ) -> Event<<IOMemory as Memory>::MemoryType> {
-        let mut data = vec![];
-        for addr in indicies {
-            if let Ok(&reg) = self.memory.read(addr) {
-                data.push((addr, reg));
-            }
-        }
-
-        Event::Memory(data)
-    }
-
-    pub fn get_memory(
-        &mut self,
-        indicies: impl Iterator<Item = usize>,
-    ) -> Vec<(usize, <IOMemory as Memory>::MemoryType)> {
-        let mut data = vec![];
-        for addr in indicies {
-            if let Ok(&reg) = self.memory.read(addr) {
-                data.push((addr, reg));
-            }
-        }
-
-        data
     }
 
     pub fn pulse(&mut self) -> Result<MachineState> {
