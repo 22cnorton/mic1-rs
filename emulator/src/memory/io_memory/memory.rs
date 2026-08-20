@@ -1,13 +1,13 @@
 use crate::memory::{
     io::IOBits,
-    io_memory::access::{LineAccessor, LineGetter, LineSender},
+    io_memory::access::LineAccessor,
     mutable,
     traits::{FromBinaryStr, Memory, ReadableMemory, WritableMemory},
 };
 use derive_builder::Builder;
 use derive_more::Debug;
+use std::collections::VecDeque;
 use std::num::ParseIntError;
-use std::{collections::VecDeque, rc::Rc};
 use thiserror::Error;
 
 const MEMORY_SIZE: usize = 0x1000;

@@ -11,9 +11,8 @@ use crate::{
     },
     memory::{io_memory::access::LineAccessor, traits::Memory},
 };
-use anyhow::{Result, bail};
+use anyhow::Result;
 use derive_builder::Builder;
-use getset::Getters;
 use std::fmt::Debug;
 
 const MICROCODE_LENGTH: usize = 256;
