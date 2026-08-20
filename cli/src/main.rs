@@ -91,13 +91,11 @@ fn main() -> anyhow::Result<()> {
                 // eprintln!("Processing {command:?}");/
                 event_tx
                     .send(match command {
-                        Command::Line(_) => todo!(),
                         Command::ViewMemory(indicies) => {
                             Event::Memory(emulator.get_memory(indicies))
                         }
                         Command::ViewRegisters => Event::Registers(*emulator.registers()),
                         Command::ViewMicrocode => Event::Microcode(emulator.microcode()),
-                        Command::Tick { count: _ } => todo!(),
                         Command::Quit => return,
                         Command::Continue => {
                             halted = false;
