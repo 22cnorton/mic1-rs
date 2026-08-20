@@ -127,6 +127,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
+ "derive_builder",
  "derive_more",
  "either",
  "emulator",
@@ -251,7 +252,6 @@ dependencies = [
  "bitfield-struct",
  "derive_builder",
  "derive_more",
- "flume",
  "getset",
  "thiserror",
 ]

@@ -1,12 +1,11 @@
 use crate::memory::{
     io::IOBits,
-    io_memory::access::{LineGetter, LineSender},
+    io_memory::access::{LineAccessor, LineGetter, LineSender},
     mutable,
     traits::{FromBinaryStr, Memory, ReadableMemory, WritableMemory},
 };
 use derive_builder::Builder;
 use derive_more::Debug;
-use flume::{Receiver, Sender};
 use std::num::ParseIntError;
 use std::{collections::VecDeque, rc::Rc};
 use thiserror::Error;
@@ -14,37 +13,33 @@ use thiserror::Error;
 const MEMORY_SIZE: usize = 0x1000;
 #[derive(Debug, Clone, Builder)]
 // #[builder(pattern = "owned")]
-pub struct IOMemory {
-    memory: mutable::MutableMemory<<IOMemory as Memory>::MemoryType, MEMORY_SIZE>,
+pub struct IOMemory<T: LineAccessor<String>> {
+    memory: mutable::MutableMemory<<IOMemory<T> as Memory>::MemoryType, MEMORY_SIZE>,
     #[builder(setter(skip))]
     input_buf: VecDeque<Option<u8>>,
 
     #[debug(skip)]
-    // #[builder(into)]
-    line_getter: Rc<dyn LineGetter<String>>,
-    #[debug(skip)]
-    // #[builder(into)]
-    line_sender: Rc<dyn LineSender<String>>,
+    line_accessor: T,
 }
 
-impl FromBinaryStr for <IOMemory as Memory>::MemoryType {
+impl FromBinaryStr for u16 {
     type Error = ParseIntError;
 
     fn from_binary_str(s: &str) -> Result<Self, Self::Error> {
-        <IOMemory as Memory>::MemoryType::from_str_radix(s, 2)
+        u16::from_str_radix(s, 2)
     }
 }
 
-impl IOMemory {
+impl<T: LineAccessor<String>> IOMemory<T> {
     const MEMORY_SIZE: usize = MEMORY_SIZE;
-    const TRANSMITTER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 1 };
-    const TRANSMITTER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 2 };
-    const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 3 };
-    const RECEIVER_ADDRESS: usize = { IOMemory::MEMORY_SIZE - 4 };
+    const TRANSMITTER_STATUS_ADDRESS: usize = { IOMemory::<T>::MEMORY_SIZE - 1 };
+    const TRANSMITTER_ADDRESS: usize = { IOMemory::<T>::MEMORY_SIZE - 2 };
+    const RECEIVER_STATUS_ADDRESS: usize = { IOMemory::<T>::MEMORY_SIZE - 3 };
+    const RECEIVER_ADDRESS: usize = { IOMemory::<T>::MEMORY_SIZE - 4 };
 }
 
 #[derive(Debug, Error, PartialEq, Eq, Clone)]
-pub enum IOMemoryError {
+pub enum IOMemoryError<T: LineAccessor<String>> {
     #[error("Out of bounds memory access at {0}")]
     OutOfBounds(usize),
 
@@ -55,18 +50,18 @@ pub enum IOMemoryError {
     LineParse(#[from] ParseIntError),
 
     #[error("Failed to create IOMemory from {0:#04x?}")]
-    ConstructFromVec(Vec<<IOMemory as Memory>::MemoryType>),
+    ConstructFromVec(Vec<<IOMemory<T> as Memory>::MemoryType>),
 
     #[error("Write Failed")]
     WriteFail,
 }
 
-impl Memory for IOMemory {
+impl<T: LineAccessor<String>> Memory for IOMemory<T> {
     type MemoryType = u16;
 }
 
-impl WritableMemory for IOMemory {
-    type MemoryError = IOMemoryError;
+impl<T: LineAccessor<String>> WritableMemory for IOMemory<T> {
+    type MemoryError = IOMemoryError<T>;
     fn write(&mut self, index: usize, value: Self::MemoryType) -> Result<(), Self::MemoryError> {
         match index {
             Self::RECEIVER_STATUS_ADDRESS => {
@@ -82,11 +77,8 @@ impl WritableMemory for IOMemory {
                 if self.transmitter_status().can_write() {
                     self.set_transmitter(value);
                     let text = [(*self.transmitter() & 0xFF) as u8].to_vec();
-                    // self.event_tx.send(event).unwrap();
-                    self.line_sender
+                    self.line_accessor
                         .send_line(&String::from_utf8(text).map_err(|_| IOMemoryError::WriteFail)?);
-                    // .send(text)
-                    // .map_err(|_| IOMemoryError::WriteFail)?;
 
                     let status = self.transmitter_status().with_done(true).with_busy(false);
                     self.set_transmitter_status(status);
@@ -110,16 +102,15 @@ impl WritableMemory for IOMemory {
         }
     }
 }
-impl ReadableMemory for IOMemory {
-    type MemoryError = IOMemoryError;
+impl<T: LineAccessor<String>> ReadableMemory for IOMemory<T> {
+    type MemoryError = IOMemoryError<T>;
     fn read(&mut self, index: usize) -> Result<&Self::MemoryType, Self::MemoryError> {
         match index {
             Self::RECEIVER_ADDRESS => {
                 if self.receiver_status().can_read() {
                     if self.input_buf.is_empty() {
-                        // eprintln!("Trying to read");
                         self.input_buf
-                            .extend(self.line_getter.get_line().bytes().into_iter().map(Some));
+                            .extend(self.line_accessor.get_line().bytes().into_iter().map(Some));
                     }
                     if let Some(Some(byte)) = self.input_buf.pop_front() {
                         self.set_receiver(u16::from(byte));
@@ -139,7 +130,7 @@ impl ReadableMemory for IOMemory {
     }
 }
 
-impl IOMemory {
+impl<T: LineAccessor<String>> IOMemory<T> {
     pub fn len(&self) -> usize {
         self.memory.len()
     }

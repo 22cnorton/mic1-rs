@@ -1,4 +1,4 @@
-use crate::machine::{
+use emulator::machine::{
     microcode::MicroInstruction,
     registers::{RegisterSize, Registers},
 };
@@ -31,7 +31,7 @@ pub enum Command {
     ViewCycles,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug)]
 pub enum Event<T> {
     Memory(Vec<(usize, T)>),
     Continue,

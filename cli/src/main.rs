@@ -1,19 +1,20 @@
-use crate::cli::Mic1Args;
+use crate::{cli::Mic1Args, io_access::ChannelLineAccessor};
 use clap::Parser;
 
 use emulator::{
-    machine::{MachineBuilder, registers::RegistersBuilder},
+    machine::{MachineBuilder, MachineState, registers::RegistersBuilder},
     memory::{
         immutable::ImmutableMemory, io_memory::IOMemoryBuilder, mutable::MutableMemory,
         traits::FromBinaryStrLines,
     },
-    messages::{Command, Event},
 };
 use flume::Receiver;
+use messages::{Command, Event};
 use std::io::{self, Write, stdin, stdout};
 
 mod cli;
 mod io_access;
+mod messages;
 
 macro_rules! print_mem {
     ($addr:expr, $value:expr) => {{
@@ -37,54 +38,75 @@ fn main() -> anyhow::Result<()> {
     let (event_tx, event_rx) = flume::unbounded();
     let (input_tx, input_rx) = flume::unbounded(); // TODO: channel to send input to the emulator thread
     let (output_tx, output_rx) = flume::unbounded(); // TODO: channel to send output from the emulator thread
+    let emulator_input_rx = input_rx.clone();
 
-    std::thread::spawn(move || -> anyhow::Result<()> {
+    std::thread::spawn(move || {
         let args = Mic1Args::parse();
+        let io_accessor = ChannelLineAccessor {
+            tx: output_tx.clone(),
+            rx: emulator_input_rx,
+        };
         let prom_data: Vec<_> = args.prom_data().collect();
-        let memory_data: Vec<_> = args.memory_data()?.collect();
+        let memory_data: Vec<_> = args.memory_data().unwrap().collect();
         let read_micro_instructions = prom_data.len();
         let read_machine_instructions = memory_data.len();
         let mut emulator =
             MachineBuilder::default() //TODO: rewrite to use if let and emit failed to init on failure
-                .micro_code(ImmutableMemory::from_binary_str_lines(prom_data)?)
+                .micro_code(ImmutableMemory::from_binary_str_lines(prom_data).unwrap())
                 .memory(
-                    IOMemoryBuilder::default()
-                        .memory(MutableMemory::from_binary_str_lines(memory_data)?)
-                        // .stdin_rx(input_rx.clone())
-                        // .stdout_tx(output_tx.clone())
-                        .build()?,
+                    IOMemoryBuilder::<ChannelLineAccessor>::default()
+                        .memory(MutableMemory::from_binary_str_lines(memory_data).unwrap())
+                        .line_accessor(io_accessor)
+                        .build()
+                        .unwrap(),
                 )
                 .registers(
                     RegistersBuilder::default()
                         .sp(args.stack_pointer())
                         .pc(args.program_counter())
-                        .build()?,
+                        .build()
+                        .unwrap(),
                 )
-                .build()?;
-        event_tx.send(emulator::messages::Event::DoneInit {
-            sp: args.stack_pointer(),
-            pc: args.program_counter(),
-            read_micro_instructions,
-            read_machine_instructions,
-        })?;
-
+                .build()
+                .unwrap();
+        event_tx
+            .send(messages::Event::DoneInit {
+                sp: args.stack_pointer(),
+                pc: args.program_counter(),
+                read_micro_instructions,
+                read_machine_instructions,
+            })
+            .unwrap();
+        let mut halted = false;
         loop {
-            emulator.pulse()?; // pulse machine
+            if !halted {
+                let state = emulator.pulse(); // pulse machine
+                if let MachineState::Halted = state {
+                    event_tx.send(Event::Halted).unwrap();
+                    halted = true;
+                }
+            }
             // manage commands
             while let Ok(command) = command_rx.try_recv() {
-                event_tx.send(match command {
-                    Command::Line(_) => todo!(),
-                    Command::ViewMemory(indicies) => Event::Memory(emulator.get_memory(indicies)),
-                    Command::ViewRegisters => Event::Registers(*emulator.registers()),
-                    Command::ViewMicrocode => Event::Microcode(emulator.microcode()),
-                    Command::Tick { count: _ } => todo!(),
-                    Command::Quit => return Ok(()),
-                    Command::Continue => {
-                        emulator.r#continue();
-                        break;
-                    }
-                    Command::ViewCycles => Event::Cycles(*emulator.clock().tick()),
-                })?;
+                // eprintln!("Processing {command:?}");/
+                event_tx
+                    .send(match command {
+                        Command::Line(_) => todo!(),
+                        Command::ViewMemory(indicies) => {
+                            Event::Memory(emulator.get_memory(indicies))
+                        }
+                        Command::ViewRegisters => Event::Registers(*emulator.registers()),
+                        Command::ViewMicrocode => Event::Microcode(emulator.microcode()),
+                        Command::Tick { count: _ } => todo!(),
+                        Command::Quit => return,
+                        Command::Continue => {
+                            halted = false;
+                            emulator.r#continue();
+                            break;
+                        }
+                        Command::ViewCycles => Event::Cycles(*emulator.clock().tick()),
+                    })
+                    .unwrap();
             }
         }
     });
@@ -92,8 +114,8 @@ fn main() -> anyhow::Result<()> {
     std::thread::spawn(move || {
         for line in stdin().lines() {
             if let Ok(line) = line {
-                let mut bytes = line.into_bytes();
-                bytes.push(b'\n');
+                let mut bytes = line;
+                bytes.push('\n');
 
                 if matches!(input_tx.send(bytes), Err(_)) {
                     return;
@@ -134,7 +156,7 @@ fn main() -> anyhow::Result<()> {
                 })
                 .recv(&output_rx, |output| {
                     if let Ok(line) = output {
-                        _ = stdout().write(line);
+                        print!("{line}");
 
                         stdout().flush().unwrap();
                     }
@@ -221,7 +243,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main_menu(input_buffer: &Receiver<Vec<u8>>) -> MenuOptions {
+fn main_menu(input_buffer: &Receiver<String>) -> MenuOptions {
     print!("Type decimal address to view memory, q to quit or c to continue: ");
     io::stdout().flush().expect("Failed to flush stdout");
     let line = get_line(input_buffer).unwrap_or_default();
@@ -240,9 +262,9 @@ fn main_menu(input_buffer: &Receiver<Vec<u8>>) -> MenuOptions {
 }
 fn memory_submenu(
     starting_index: usize,
-    input_buffer: &Receiver<Vec<u8>>,
+    input_buffer: &Receiver<String>,
 ) -> Option<MemorySubmenuOptions> {
-    fn get_memory_steps(direction: &str, input_buffer: &Receiver<Vec<u8>>) -> Option<usize> {
+    fn get_memory_steps(direction: &str, input_buffer: &Receiver<String>) -> Option<usize> {
         print!("Type the number of {} locations to dump: ", direction);
         stdout().flush().expect("Failed to flush stdout");
         get_line(input_buffer)
@@ -294,11 +316,8 @@ enum MenuOptions {
     ViewMemory(usize),
 }
 
-fn get_line(input_buffer: &Receiver<Vec<u8>>) -> Option<String> {
-    input_buffer
-        .recv()
-        .ok()
-        .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
+fn get_line(input_buffer: &Receiver<String>) -> Option<String> {
+    input_buffer.recv().ok().map(|str| str.trim().to_string())
 }
 
 #[derive(Debug, Clone, Copy)]

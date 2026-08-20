@@ -1,32 +1,27 @@
+use crate::memory::{
+    immutable::ImmutableMemory,
+    io_memory::IOMemory,
+    traits::{ReadableMemory, WritableMemory},
+};
 use crate::{
     machine::{
         clock::{Clock, Subtick},
         microcode::{self, MicroInstruction},
         registers::{RegisterSize, Registers},
     },
-    memory::traits::Memory,
-    messages::Command,
-};
-use crate::{
-    memory::{
-        immutable::ImmutableMemory,
-        io_memory::IOMemory,
-        traits::{ReadableMemory, WritableMemory},
-    },
-    messages::Event,
+    memory::{io_memory::access::LineAccessor, traits::Memory},
 };
 use anyhow::{Result, bail};
 use derive_builder::Builder;
-use flume::{Receiver, Sender};
 use getset::Getters;
 use std::fmt::Debug;
 
 const MICROCODE_LENGTH: usize = 256;
 #[derive(Debug, Clone, Builder)]
 #[builder(setter(skip))]
-pub struct Machine {
+pub struct Machine<T: LineAccessor<String>> {
     #[builder(setter)]
-    memory: IOMemory,
+    memory: IOMemory<T>,
     #[builder(setter)]
     micro_code: ImmutableMemory<MicroInstruction, { MICROCODE_LENGTH }>,
 
@@ -50,7 +45,7 @@ pub enum MachineState {
 }
 
 #[allow(dead_code)]
-impl Machine {
+impl<T: LineAccessor<String>> Machine<T> {
     pub fn current_instruction(&mut self) -> u16 {
         *self
             .memory
@@ -77,7 +72,7 @@ impl Machine {
     pub fn get_memory(
         &mut self,
         indicies: impl IntoIterator<Item = usize>,
-    ) -> Vec<(usize, <IOMemory as Memory>::MemoryType)> {
+    ) -> Vec<(usize, <IOMemory<T> as Memory>::MemoryType)> {
         let mut data = vec![];
         for addr in indicies {
             if let Ok(&reg) = self.memory.read(addr) {
@@ -89,7 +84,7 @@ impl Machine {
     }
 }
 
-impl Machine {
+impl<T: LineAccessor<String>> Machine<T> {
     fn instruction_at(&mut self, addr: u8) -> MicroInstruction {
         *self
             .micro_code
@@ -187,7 +182,7 @@ impl Machine {
         self.registers.set_pc(self.registers.pc().saturating_add(1));
     }
 
-    pub fn pulse(&mut self) -> Result<MachineState> {
+    pub fn pulse(&mut self) -> MachineState {
         match self.clock.subtick() {
             Subtick::Load => self.load(),
             Subtick::Gate => self.gate(),
@@ -199,7 +194,7 @@ impl Machine {
             match (self.mir.rd(), self.mir.wr()) {
                 (true, true) => {
                     self.halt();
-                    return Ok(MachineState::Halted);
+                    return MachineState::Halted;
                 }
                 (false, true) => {
                     self.memory
@@ -219,11 +214,11 @@ impl Machine {
 
         self.clock.pulse();
 
-        Ok(MachineState::Running)
+        MachineState::Running
     }
 }
 
-impl MachineBuilder {
+impl<T: LineAccessor<String>> MachineBuilder<T> {
     fn default_mir(&self) -> Result<MicroInstruction, String> {
         let mir = self
             .micro_code
