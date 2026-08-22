@@ -1,23 +1,21 @@
+use std::io::stdin;
+
 use emulator::memory::io_memory::access::{LineGetter, LineSender};
-use flume::{Receiver, Sender};
 
-#[derive(Clone, Debug)]
-pub struct ChannelLineAccessor {
-    pub(crate) rx: Receiver<String>,
-    pub(crate) tx: Sender<String>,
-}
 
-impl LineGetter<String> for ChannelLineAccessor {
+#[derive(Clone, Debug, Default)]
+pub struct StdIOAccessor;
+
+impl LineGetter<String> for StdIOAccessor {
     fn get_line(&self) -> String {
-        match self.rx.recv() {
-            Ok(s) => s,
-            Err(_) => Default::default(),
-        }
+        let mut buf = Default::default();
+        _ = stdin().read_line(&mut buf);
+        buf
     }
 }
 
-impl LineSender<String> for ChannelLineAccessor {
+impl LineSender<String> for StdIOAccessor {
     fn send_line(&self, line: &String) {
-        _ = self.tx.send(line.to_string());
+        print!("{line}");
     }
 }
