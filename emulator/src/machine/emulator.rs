@@ -1,31 +1,26 @@
+use crate::memory::{
+    immutable::ImmutableMemory,
+    io_memory::IOMemory,
+    traits::{ReadableMemory, WritableMemory},
+};
 use crate::{
     machine::{
         clock::{Clock, Subtick},
         microcode::{self, MicroInstruction},
         registers::{RegisterSize, Registers},
     },
-    memory::traits::Memory,
-    messages::Command,
+    memory::{io_memory::access::LineAccessor, traits::Memory},
 };
-use crate::{
-    memory::{
-        IOMemory,
-        immutable::ImmutableMemory,
-        traits::{ReadableMemory, WritableMemory},
-    },
-    messages::Event,
-};
-use anyhow::{Result, bail};
+use anyhow::Result;
 use derive_builder::Builder;
-use flume::{Receiver, Sender};
 use std::fmt::Debug;
 
 const MICROCODE_LENGTH: usize = 256;
-#[derive(Debug, Builder)]
+#[derive(Debug, Clone, Builder)]
 #[builder(setter(skip))]
-pub struct Machine {
+pub struct Machine<T: LineAccessor<String>> {
     #[builder(setter)]
-    memory: IOMemory,
+    memory: IOMemory<T>,
     #[builder(setter)]
     micro_code: ImmutableMemory<MicroInstruction, { MICROCODE_LENGTH }>,
 
@@ -41,26 +36,54 @@ pub struct Machine {
     c_bus: RegisterSize,
     mbr: RegisterSize,
     mar: RegisterSize, // Retype since this can only be twelve bits
-
-    #[builder(setter)]
-    command_rx: Receiver<Command>,
-    #[builder(setter)]
-    event_tx: Sender<Event<<IOMemory as Memory>::MemoryType>>,
 }
 
-impl Machine {
-    #[allow(dead_code)]
+pub enum MachineState {
+    Halted,
+    Running,
+}
+
+#[allow(dead_code)]
+impl<T: LineAccessor<String>> Machine<T> {
     pub fn current_instruction(&mut self) -> u16 {
         *self
             .memory
             .read(*self.registers.pc() as usize)
             .expect("Never read out of bounds")
     }
-    #[allow(dead_code)]
+
     pub fn current_micro_instruction(&self) -> MicroInstruction {
         self.mir
     }
 
+    pub fn clock(&self) -> &Clock {
+        &self.clock
+    }
+
+    pub fn microcode(&self) -> Vec<MicroInstruction> {
+        (&self.micro_code).into()
+    }
+
+    pub fn registers(&self) -> &Registers {
+        &self.registers
+    }
+
+    pub fn get_memory(
+        &mut self,
+        indicies: impl IntoIterator<Item = usize>,
+    ) -> Vec<(usize, <IOMemory<T> as Memory>::MemoryType)> {
+        let mut data = vec![];
+        for addr in indicies {
+            if let Ok(&reg) = self.memory.read(addr) {
+                data.push((addr, reg));
+            }
+        }
+
+        data
+    }
+}
+
+impl<T: LineAccessor<String>> Machine<T> {
     fn instruction_at(&mut self, addr: u8) -> MicroInstruction {
         *self
             .micro_code
@@ -73,8 +96,8 @@ impl Machine {
     }
 
     fn gate(&mut self) {
-        self.a_bus = *self.registers.read_from_reg(self.mir.a() as usize);
-        self.b_bus = *self.registers.read_from_reg(self.mir.b() as usize);
+        self.a_bus = *self.registers.read(self.mir.a() as usize).unwrap();
+        self.b_bus = *self.registers.read(self.mir.b() as usize).unwrap();
     }
 
     fn calc(&mut self) {
@@ -137,73 +160,28 @@ impl Machine {
 
     fn store(&mut self) {
         if self.mir.enc() {
-            self.registers
-                .write_to_reg(self.mir.c() as usize, self.c_bus);
+            self.registers.write(self.mir.c() as usize, self.c_bus);
         }
         if self.mir.mbr() {
             self.mbr = self.c_bus;
         }
     }
 
-    fn halt(&mut self) -> Result<()> {
+    fn halt(&mut self) {
         self.blocking_io = true;
-
-        if self.command_rx.is_empty() {
-            self.event_tx.send(Event::Halted)?; // send event when halt state reached
-        }
-
-        loop {
-            let event = match self.command_rx.recv()? {
-                Command::Line(_) => todo!(),
-                Command::ViewMemory(items) => self.display_memory(items.into_iter()),
-                Command::ViewRegisters => {
-                    let reg = self.registers;
-                    Event::Registers(reg)
-                }
-                Command::Tick { count: _ } => todo!(),
-
-                Command::Quit => {
-                    self.event_tx.send(Event::Finished)?;
-                    bail!("Quiting") // TODO: clean up, either by fxn return value, or internal tracker, or custom error
-                }
-                Command::Continue => {
-                    self.blocking_io = false;
-                    self.micro_pc = 0;
-
-                    self.clock.set_tick(self.clock.tick().saturating_add(1));
-                    self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
-
-                    self.registers.set_pc(self.registers.pc().saturating_add(1));
-                    self.event_tx.send(Event::Continue)?;
-
-                    break;
-                }
-                Command::ViewMicrocode => {
-                    let micro_code = &self.micro_code;
-                    Event::Microcode(micro_code.into())
-                }
-                Command::ViewCycles => Event::Cycles(*self.clock.tick()),
-            };
-            self.event_tx.send(event)?;
-        }
-        Ok(())
     }
 
-    fn display_memory(
-        &mut self,
-        indicies: impl Iterator<Item = usize>,
-    ) -> Event<<IOMemory as Memory>::MemoryType> {
-        let mut data = vec![];
-        for addr in indicies {
-            if let Ok(&reg) = self.memory.read(addr) {
-                data.push((addr, reg));
-            }
-        }
+    pub fn r#continue(&mut self) {
+        self.blocking_io = false;
+        self.micro_pc = 0;
 
-        Event::Memory(data)
+        self.clock.set_tick(self.clock.tick().saturating_add(1));
+        self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
+
+        self.registers.set_pc(self.registers.pc().saturating_add(1));
     }
 
-    pub fn pulse(&mut self) -> Result<()> {
+    pub fn pulse(&mut self) -> MachineState {
         match self.clock.subtick() {
             Subtick::Load => self.load(),
             Subtick::Gate => self.gate(),
@@ -214,7 +192,8 @@ impl Machine {
         if self.clock.subtick().is_load() {
             match (self.mir.rd(), self.mir.wr()) {
                 (true, true) => {
-                    self.halt()?;
+                    self.halt();
+                    return MachineState::Halted;
                 }
                 (false, true) => {
                     self.memory
@@ -234,39 +213,11 @@ impl Machine {
 
         self.clock.pulse();
 
-        // if command.is_none() {
-        //     command = self.command_rx.try_recv().ok();
-        // }
-
-        // match self.command_rx.try_recv() {//TODO: handle messages to veiw state while running
-        //     Ok(Command::ViewRegisters) => {
-        //         self.event_tx.send(Event::Registers(self.registers))?;
-        //     }
-        //     _ => {}
-        // }
-
-        // if let Some(command) = command {
-        //     self.event_tx.send(match command {
-        //         Command::Line(_) => todo!(),
-        //         Command::ViewMemory(items) => todo!(),
-        //         Command::ViewRegisters => todo!(),
-        //         Command::ViewMicrocode => todo!(),
-        //         Command::Tick { count } => todo!(),
-
-        //         Command::Quit => Event::Finished,
-        //         Command::Continue => {
-        //             self.blocking_io = false;
-        //             self.clock.set_subtick(Subtick::Load); // Reset subtick to Load for next instruction
-        //             Event::Continue
-        //         }
-        //     })?;
-        // }
-
-        Ok(())
+        MachineState::Running
     }
 }
 
-impl MachineBuilder {
+impl<T: LineAccessor<String>> MachineBuilder<T> {
     fn default_mir(&self) -> Result<MicroInstruction, String> {
         let mir = self
             .micro_code

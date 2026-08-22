@@ -1,5 +1,4 @@
 use core::fmt;
-use std::ops::{Index, IndexMut};
 
 use derive_builder::Builder;
 use getset::{Getters, Setters, WithSetters};
@@ -63,39 +62,37 @@ impl fmt::Display for Registers {
     }
 }
 
-impl Index<usize> for Registers {
-    type Output = RegisterSize;
-
-    fn index(&self, index: usize) -> &Self::Output {
+impl Registers {
+    pub fn read(&self, index: usize) -> Option<&RegisterSize> {
         if index > 15 {
-            panic!("Invalid register index: {}", index);
+            None
+        } else {
+            unsafe { Some(self.read_unchecked(index)) }
         }
+    }
+    pub unsafe fn read_unchecked(&self, index: usize) -> &RegisterSize {
         unsafe {
             let array_ptr = self as *const _ as *const [_; 16];
             &(*array_ptr)[index as usize]
         }
     }
-}
 
-impl IndexMut<usize> for Registers {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+    pub fn write(&mut self, index: usize, value: RegisterSize) -> Option<()> {
         if index > 15 {
-            panic!("Invalid register index: {}", index);
+            None
+        } else {
+            unsafe {
+                self.write_unchecked(index, value);
+            }
+            Some(())
         }
+    }
+
+    pub unsafe fn write_unchecked(&mut self, index: usize, value: RegisterSize) {
         unsafe {
             let array_ptr = self as *mut _ as *mut [_; 16];
-            &mut (*array_ptr)[index as usize]
+            (*array_ptr)[index as usize] = value;
         }
-    }
-}
-
-impl Registers {
-    pub fn read_from_reg(&self, index: usize) -> &RegisterSize {
-        &self[index]
-    }
-
-    pub fn write_to_reg(&mut self, index: usize, value: RegisterSize) {
-        self[index] = value;
     }
 }
 
