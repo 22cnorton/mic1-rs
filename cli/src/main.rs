@@ -1,4 +1,4 @@
-use crate::{cli::Mic1Args, io_access::ChannelLineAccessor};
+use crate::{cli::Mic1Args, io_access::StdIOAccessor};
 use clap::Parser;
 
 use emulator::{
@@ -8,7 +8,6 @@ use emulator::{
         traits::FromBinaryStrLines,
     },
 };
-use flume::Receiver;
 use std::io::{self, Write, stdin, stdout};
 
 mod cli;
@@ -32,14 +31,8 @@ macro_rules! print_mem {
 }
 
 fn main() -> anyhow::Result<()> {
-    let (input_tx, input_rx) = flume::unbounded();
-    let (output_tx, output_rx) = flume::unbounded();
-
     let args = Mic1Args::parse();
-    let io_accessor = ChannelLineAccessor {
-        tx: output_tx,
-        rx: input_rx.clone(),
-    };
+    let io_accessor = StdIOAccessor;
     let prom_data: Vec<_> = args.prom_data().collect();
     let memory_data: Vec<_> = args.memory_data()?.collect();
     let read_micro_instructions = prom_data.len();
@@ -60,24 +53,9 @@ fn main() -> anyhow::Result<()> {
         )
         .build()?;
 
-    std::thread::spawn(move || {
-        for line in stdin().lines() {
-            if let Ok(line) = line {
-                if matches!(input_tx.send(line + "\n"), Err(_)) {
-                    return;
-                }
-            }
-        }
-    });
-
     let mut state = EmulatorState::Init;
-    let input_buffer = input_rx.clone();
 
     loop {
-        for line in output_rx.try_iter() {
-            print!("{line}");
-        }
-
         state = match state {
             EmulatorState::Init => {
                 println!("Read in {} micro instructions", read_micro_instructions);
@@ -113,7 +91,7 @@ fn main() -> anyhow::Result<()> {
 
                 EmulatorState::Menu
             }
-            EmulatorState::Menu => match main_menu(&input_buffer) {
+            EmulatorState::Menu => match main_menu() {
                 MenuOptions::Quit => EmulatorState::Quit,
                 MenuOptions::Continue => EmulatorState::ShowPC,
                 MenuOptions::ViewMicrocode => EmulatorState::DisplayMicrocode,
@@ -122,7 +100,7 @@ fn main() -> anyhow::Result<()> {
             EmulatorState::MemoryMenu(index) => {
                 print_mem!(emulator.get_memory([index]));
 
-                match memory_submenu(index, &input_buffer) {
+                match memory_submenu(index) {
                     Some(
                         MemorySubmenuOptions::Forward { indices }
                         | MemorySubmenuOptions::Backward { indices },
@@ -155,10 +133,10 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main_menu(input_buffer: &Receiver<String>) -> MenuOptions {
+fn main_menu() -> MenuOptions {
     print!("Type decimal address to view memory, q to quit or c to continue: ");
     io::stdout().flush().expect("Failed to flush stdout");
-    let line = get_line(input_buffer).unwrap_or_default();
+    let line = get_line().unwrap_or_default();
 
     match line.to_lowercase().as_str() {
         "q" => MenuOptions::Quit,
@@ -172,18 +150,11 @@ fn main_menu(input_buffer: &Receiver<String>) -> MenuOptions {
         }
     }
 }
-fn memory_submenu(
-    starting_index: usize,
-    input_buffer: &Receiver<String>,
-) -> Option<MemorySubmenuOptions> {
-    fn get_memory_steps(direction: &str, input_buffer: &Receiver<String>) -> Option<usize> {
+fn memory_submenu(starting_index: usize) -> Option<MemorySubmenuOptions> {
+    fn get_memory_steps(direction: &str) -> Option<usize> {
         print!("Type the number of {} locations to dump: ", direction);
         stdout().flush().expect("Failed to flush stdout");
-        get_line(input_buffer)
-            .unwrap_or_default()
-            .trim()
-            .parse()
-            .ok()
+        get_line().unwrap_or_default().trim().parse().ok()
     }
 
     println!("Type  {:>7}  to continue debugging", "<Enter>");
@@ -192,17 +163,17 @@ fn memory_submenu(
     print!("Type  {:>7} for backward range: ", 'b');
     std::io::stdout().flush().expect("Failed to flush stdout");
 
-    let line = get_line(input_buffer).unwrap_or_default().to_lowercase();
+    let line = get_line().unwrap_or_default().to_lowercase();
     match line.as_str() {
         "" => Some(MemorySubmenuOptions::Continue),
         "q" => Some(MemorySubmenuOptions::Quit),
         "f" => {
-            let steps = get_memory_steps("forward", input_buffer)?;
+            let steps = get_memory_steps("forward")?;
             let indices = (starting_index.saturating_add(1)..=starting_index + steps).collect();
             Some(MemorySubmenuOptions::Forward { indices })
         }
         "b" => {
-            let steps = get_memory_steps("backward", input_buffer)?;
+            let steps = get_memory_steps("backward")?;
             let indices = (starting_index.saturating_sub(steps)..starting_index)
                 .rev()
                 .collect();
@@ -228,8 +199,10 @@ enum MenuOptions {
     ViewMemory(usize),
 }
 
-fn get_line(input_buffer: &Receiver<String>) -> Option<String> {
-    input_buffer.recv().ok().map(|str| str.trim().to_string())
+fn get_line() -> Option<String> {
+    let mut buf = Default::default();
+    stdin().read_line(&mut buf).ok()?;
+    Some(buf.trim().into())
 }
 
 #[derive(Debug, Clone)]
